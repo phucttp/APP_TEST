@@ -12,7 +12,7 @@
   */
   const DEFAULT_TAB = 'Log';
   const TEMPLATE_TAB = 'Mẫu';
-  const SCRIPT_VERSION = 9; // >=2: xoá, >=3: tab, >=4: ID ẩn, 6: canh cột, 7: onEdit, 8: tách ngày, 9: gộp ô tách ngày
+  const SCRIPT_VERSION = 10; // ...8: tách ngày, 9: gộp ô tách ngày, 10: tự dọn dòng trống + ngày rỗng
   const SEP_BG = '#d9ead3';     // nền dòng tách ngày (xanh nhạt)
   const SEP_FG = '#274e13';     // chữ dòng tách ngày (xanh đậm)
   const MD_SEP = 'qt_sep';      // đánh dấu ẩn: dòng này là dòng tách ngày, không phải lần quay
@@ -88,6 +88,38 @@
       .setBackground(SEP_BG).setFontColor(SEP_FG).setFontWeight('bold')
       .setBorder(true, null, null, null, null, null, SEP_FG, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
     sh.getRange(r + ':' + r).addDeveloperMetadata(MD_SEP, '1');
+  }
+
+  /**
+   * Dọn khoảng trống trong tab:
+   *  - Dòng dữ liệu bị xoá trắng (không còn chữ nào) → xoá hẳn dòng.
+   *  - Ngày không còn máy nào (dòng tách ngày mà bên dưới không còn dữ liệu) → xoá dòng tách ngày.
+   * Trả về số dòng đã xoá.
+   */
+  function compact_(sh) {
+    const last = sh.getLastRow();
+    const lastCol = tableLastCol_(sh);
+    if (last < 2 || lastCol < 1) return 0;
+    const vals = sh.getRange(2, 1, last - 1, lastCol).getDisplayValues();
+    const seps = sepRows_(sh);
+    const del = {};
+    // 1) Dòng dữ liệu trắng
+    vals.forEach((v, k) => {
+      const row = k + 2;
+      if (!seps[row] && v.every(x => String(x).trim() === '')) del[row] = true;
+    });
+    // 2) Dòng tách ngày mà ngày đó không còn dữ liệu
+    Object.keys(seps).map(Number).forEach(s => {
+      let hasData = false;
+      for (let j = s + 1; j <= last; j++) {
+        if (seps[j]) break;
+        if (!del[j]) { hasData = true; break; }
+      }
+      if (!hasData) del[s] = true;
+    });
+    const rows = Object.keys(del).map(Number).filter(r => r >= 2 && r <= last).sort((a, b) => b - a);
+    rows.forEach(r => sh.deleteRow(r));   // xoá từ dưới lên để số dòng không lệch
+    return rows.length;
   }
 
   /** Đọc metadata ẩn của cả tab: {số dòng: {id, file}} */
@@ -180,8 +212,10 @@
       if (lastCol < 1) return;                       // không phải tab bảng → bỏ qua
       const from = e.range.getColumn();
       if (from > lastCol) return;
-      const to = Math.min(lastCol, from + e.range.getNumColumns() - 1);
-      fitCols_(sh, from, to);
+      // Xoá trắng dòng / cả ngày → dọn dòng trống + dòng tách ngày không còn máy
+      const removed = (e.value === undefined) ? compact_(sh) : 0;
+      if (removed > 0) fitCols_(sh, 1, lastCol);
+      else fitCols_(sh, from, Math.min(lastCol, from + e.range.getNumColumns() - 1));
     } catch (err) { /* không làm phiền người dùng khi lỗi */ }
   }
 
@@ -267,11 +301,13 @@
         const belowEndsDay = (r + 1 > sh.getLastRow()) || seps[r + 1] === true;
         sh.deleteRow(r);
         if (aboveIsSep && belowEndsDay) sh.deleteRow(r - 1);
-        try { tidy_(sh); } catch (e) { /* canh cột lỗi không ảnh hưởng việc xoá */ }
+        try { compact_(sh); tidy_(sh); } catch (e) { /* dọn lỗi không ảnh hưởng việc xoá */ }
         return json({ ok: true, deleted: true });
       }
 
       const t = getTab_(d.sheet);
+      // Dọn dòng trống / ngày rỗng trước khi ghi → máy mới không bị ghi lọt vào ngày rỗng cũ
+      try { compact_(t.sh); } catch (e) {}
       // App gửi lại khi mất mạng → bỏ qua nếu ID đã có
       if (d.id && findRowById_(t.sh, d.id)) return json({ ok: true, duplicate: true });
 
@@ -316,7 +352,7 @@
     if (p.action === 'tidy') {
       const done = [];
       ss.getSheets().forEach(s => {
-        if (header_(s).indexOf(norm_('Mã máy')) >= 0) { migrate_(s); tidy_(s); done.push(s.getName()); }
+        if (header_(s).indexOf(norm_('Mã máy')) >= 0) { migrate_(s); compact_(s); tidy_(s); done.push(s.getName()); }
       });
       return json({ ok: true, version: SCRIPT_VERSION, tidied: done });
     }
