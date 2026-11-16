@@ -12,7 +12,7 @@
   */
   const DEFAULT_TAB = 'Log';
   const TEMPLATE_TAB = 'Mẫu';
-  const SCRIPT_VERSION = 8; // >=2: xoá, >=3: tab, >=4: ID ẩn, 6: canh cột, 7: onEdit, 8: dòng tách ngày
+  const SCRIPT_VERSION = 9; // >=2: xoá, >=3: tab, >=4: ID ẩn, 6: canh cột, 7: onEdit, 8: tách ngày, 9: gộp ô tách ngày
   const SEP_BG = '#d9ead3';     // nền dòng tách ngày (xanh nhạt)
   const SEP_FG = '#274e13';     // chữ dòng tách ngày (xanh đậm)
   const MD_SEP = 'qt_sep';      // đánh dấu ẩn: dòng này là dòng tách ngày, không phải lần quay
@@ -72,14 +72,19 @@
     return String(v || '').replace(/^'/, '');
   }
 
-  /** Chèn dòng tách ngày "▼ Thứ Hai, 16/11/2026" tại dòng r. */
+  /**
+   * Chèn dòng tách ngày tại dòng r: GỘP NGANG toàn bộ cột của bảng thành 1 ô,
+   * nhãn "▼ Thứ Hai, 16/11/2026" căn giữa, nền xanh nhạt, chữ đậm, viền xanh đậm phía trên.
+   */
   function writeSep_(sh, r, dayStr, pos, width) {
     const d = toDate_(dayStr);
     const label = '▼ ' + (d instanceof Date ? THU[d.getDay()] + ', ' : '') + dayStr;
-    const vals = new Array(width).fill('');
-    vals[pos.date - 1] = d;                 // cột Ngày vẫn là ngày thật (lọc/sắp xếp được)
-    vals[pos.customer - 1] = label;         // nhãn hiện ở cột Tên khách cho dễ đọc
-    sh.getRange(r, 1, 1, width).setValues([vals])
+    const cols = tableLastCol_(sh) || width;
+    const rng = sh.getRange(r, 1, 1, cols);
+    rng.clearContent();
+    sh.getRange(r, 1).setNumberFormat('@').setValue(label);   // ô đầu: nhãn dạng chữ
+    try { rng.merge(); } catch (e) { /* bảng không cho gộp → vẫn để nhãn ở ô đầu */ }
+    rng.setHorizontalAlignment('center').setVerticalAlignment('middle')
       .setBackground(SEP_BG).setFontColor(SEP_FG).setFontWeight('bold')
       .setBorder(true, null, null, null, null, null, SEP_FG, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
     sh.getRange(r + ':' + r).addDeveloperMetadata(MD_SEP, '1');
@@ -206,9 +211,14 @@
         migrate_(sh);
         if (sh.getLastRow() >= 2) {
           // Xoá dữ liệu + màu/viền của dòng tách ngày tháng trước (giữ font/kiểu cột của bảng)
-          sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).clearContent()
+          const body = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn());
+          body.breakApart().clearContent()                 // gỡ ô gộp của dòng tách ngày cũ
             .setBackground(null).setFontColor(null).setFontWeight('normal')
+            .setHorizontalAlignment(null)
             .setBorder(false, false, false, false, false, false);
+          // Cột Ngày trở lại kiểu ngày (ô nhãn dòng tách ngày đã bị ép kiểu chữ)
+          const hdr = header_(sh), iDate = hdr.indexOf(norm_('Ngày'));
+          if (iDate >= 0) sh.getRange(2, iDate + 1, sh.getLastRow() - 1, 1).setNumberFormat('dd/MM/yyyy');
         }
         [MD_ID, MD_FILE, MD_SEP].forEach(k => sh.createDeveloperMetadataFinder().withKey(k).find().forEach(m => m.remove()));
       } else {
