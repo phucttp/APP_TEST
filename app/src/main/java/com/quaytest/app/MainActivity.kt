@@ -400,11 +400,12 @@ class MainActivity : AppCompatActivity() {
         if (machineType in types) d.ddType.setText(machineType, false)
         else if (types.size == 1) d.ddType.setText(types[0], false)
         if (types.isEmpty()) d.tilType.helperText = "Chưa có loại máy — thêm ở ⚙ CÀI ĐẶT"
+        // Mã mạch: GIỮ NGUYÊN VĂN (không viết hoa, không đổi _ / . ...) — chỉ tắt bộ gõ tiếng Việt
         d.etBoard.apply {
             setText(board)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
-            filters = arrayOf(InputFilter.AllCaps(), InputFilter.LengthFilter(40))
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            filters = arrayOf(InputFilter.LengthFilter(200))
         }
         d.etNote.setText(note)
         // Nút 📷 ở ô Mã mạch → quét mã vạch / QR, tự điền vào ô
@@ -417,7 +418,8 @@ class MainActivity : AppCompatActivity() {
                     .build()
             ).startScan()
                 .addOnSuccessListener { bc ->
-                    val v = normalizeCode(bc.rawValue.orEmpty())
+                    // Nguyên văn những gì quét được, chỉ bỏ ký tự xuống dòng/thừa ở 2 đầu
+                    val v = bc.rawValue.orEmpty().trim()
                     if (v.isEmpty()) toast("Mã quét được không hợp lệ")
                     else { d.etBoard.setText(v); d.etBoard.setSelection(v.length); d.tilBoard.error = null }
                 }
@@ -489,7 +491,7 @@ class MainActivity : AppCompatActivity() {
             val clean = { s: String -> s.trim().replace(Regex("\\s+"), " ") }
             customer = clean(d.etCustomer.text.toString())
             machineType = pickedType
-            board = normalizeCode(d.etBoard.text.toString())
+            board = d.etBoard.text.toString().trim()   // nguyên văn
             note = clean(d.etNote.text.toString())
             staff = pickedStaff
             if (!autoMonth) sheetTab = d.ddSheet.text.toString().trim().ifEmpty { Store.DEFAULT_TAB }
@@ -796,32 +798,79 @@ class MainActivity : AppCompatActivity() {
 
     // ================= CÀI ĐẶT =================
 
-    /** Hiện danh sách dạng chip có nút xoá; thêm bằng ô nhập + nút THÊM / Enter. */
-    private fun bindChipList(
-        group: ChipGroup,
-        input: android.widget.EditText,
-        addBtn: View,
-        items: MutableList<String>
-    ) {
-        fun render() {
-            group.removeAllViews()
-            items.forEach { name ->
-                group.addView(Chip(this).apply {
-                    text = name
-                    isCloseIconVisible = true
-                    setOnCloseIconClickListener { items.remove(name); render() }
-                })
+    /**
+     * Màn quản lý 1 danh sách (nhân viên / loại máy / sheet): ô nhập + THÊM ở trên,
+     * danh sách cuộn trong khung cố định ở dưới, mỗi dòng có nút xoá.
+     * Sửa trực tiếp vào [items]; [onDone] chạy khi đóng để cập nhật dòng tóm tắt.
+     */
+    private fun showListEditor(title: String, hint: String, items: MutableList<String>, onDone: () -> Unit) {
+        val d = com.quaytest.app.databinding.DialogListEditBinding.inflate(layoutInflater)
+        d.tilNew.hint = hint
+
+        class VH(val v: com.quaytest.app.databinding.ItemListRowBinding) :
+            androidx.recyclerview.widget.RecyclerView.ViewHolder(v.root)
+        lateinit var adapter: androidx.recyclerview.widget.RecyclerView.Adapter<VH>
+        fun refresh() {
+            d.tvCount.text = "ĐÃ CÓ ${items.size}"
+            d.tvEmpty.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+            adapter.notifyDataSetChanged()
+        }
+        adapter = object : androidx.recyclerview.widget.RecyclerView.Adapter<VH>() {
+            override fun onCreateViewHolder(p: android.view.ViewGroup, t: Int) =
+                VH(com.quaytest.app.databinding.ItemListRowBinding.inflate(layoutInflater, p, false))
+            override fun getItemCount() = items.size
+            override fun onBindViewHolder(h: VH, pos: Int) {
+                val name = items[pos]
+                h.v.tvName.text = name
+                h.v.btnDel.setOnClickListener {
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setMessage("Xoá \"$name\" khỏi danh sách?")
+                        .setPositiveButton("XOÁ") { _, _ -> items.remove(name); refresh() }
+                        .setNegativeButton("HUỶ", null).show()
+                }
             }
         }
+        d.list.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
+        d.list.addItemDecoration(
+            androidx.recyclerview.widget.DividerItemDecoration(this, androidx.recyclerview.widget.DividerItemDecoration.VERTICAL)
+        )
+        d.list.adapter = adapter
+
         fun add() {
-            val v = input.text.toString().trim().replace(Regex("\\s+"), " ")
-            if (v.isNotEmpty() && items.none { it.equals(v, true) }) { items += v; render() }
-            input.setText("")
+            val v = d.etNew.text.toString().trim().replace(Regex("\\s+"), " ")
+            when {
+                v.isEmpty() -> Unit
+                items.any { it.equals(v, true) } -> d.tilNew.error = "Đã có \"$v\""
+                else -> {
+                    d.tilNew.error = null
+                    items += v
+                    refresh()
+                    d.list.scrollToPosition(items.size - 1)
+                }
+            }
+            d.etNew.setText("")
         }
-        addBtn.setOnClickListener { add() }
-        input.setOnEditorActionListener { _, _, _ -> add(); true }
-        render()
+        d.btnAdd.setOnClickListener { add() }
+        d.etNew.setOnEditorActionListener { _, _, _ -> add(); true }
+        refresh()
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(title)
+            .setView(d.root)
+            .setPositiveButton("XONG") { _, _ ->
+                // Ô nhập còn chữ chưa bấm THÊM → vẫn thêm cho khỏi mất
+                val v = d.etNew.text.toString().trim()
+                if (v.isNotEmpty() && items.none { it.equals(v, true) }) items += v
+                onDone()
+            }
+            .setOnCancelListener { onDone() }
+            .show()
+            .also { dlg -> dlg.window?.decorView?.let { it.post { it.tapOutsideHidesKeyboard() } } }
     }
+
+    /** "Phúc, Tuấn, Tài" hoặc dòng nhắc khi trống. */
+    private fun summary(items: List<String>, empty: String) =
+        if (items.isEmpty()) empty else items.joinToString(", ")
 
     /** Cài đặt ít khi đổi: danh sách nhân viên, danh sách sheet, link bảng tính + Apps Script. */
     private fun showConfigDialog() {
@@ -829,12 +878,30 @@ class MainActivity : AppCompatActivity() {
         val d = DialogSettingsBinding.inflate(layoutInflater)
         d.etSheetLink.setText(prefs.getString(SheetLogger.KEY_SHEET_LINK, SheetLogger.DEFAULT_SHEET_LINK))
         d.etScriptUrl.setText(prefs.getString(SheetLogger.KEY_URL, ""))
+        // Danh sách sửa trong bộ nhớ, chỉ lưu khi bấm LƯU (HUỶ = bỏ thay đổi)
         val staffItems = Store.staffList(this).toMutableList()
-        val sheetItems = Store.getList(this, Store.KEY_SHEET_LIST, listOf(Store.DEFAULT_TAB)).toMutableList()
-        bindChipList(d.cgStaff, d.etNewStaff, d.btnAddStaff, staffItems)
         val typeItems = Store.typeList(this).toMutableList()
-        bindChipList(d.cgType, d.etNewType, d.btnAddType, typeItems)
-        bindChipList(d.cgSheet, d.etNewSheet, d.btnAddSheet, sheetItems)
+        val sheetItems = Store.getList(this, Store.KEY_SHEET_LIST, listOf(Store.DEFAULT_TAB)).toMutableList()
+        fun refreshSummaries() {
+            d.tvStaffTitle.text = "Nhân viên test (${staffItems.size})"
+            d.tvStaffSum.text = summary(staffItems, "⚠ Chưa có — bấm SỬA để thêm")
+            d.tvTypeTitle.text = "Loại máy (${typeItems.size})"
+            d.tvTypeSum.text = summary(typeItems, "⚠ Chưa có — bấm SỬA để thêm")
+            d.tvSheetTitle.text = "Danh sách sheet (${sheetItems.size})"
+            d.tvSheetSum.text = summary(sheetItems, "Log")
+        }
+        refreshSummaries()
+        d.btnEditStaff.setOnClickListener {
+            showListEditor("Nhân viên test", "Tên nhân viên mới", staffItems) { refreshSummaries() }
+        }
+        d.btnEditType.setOnClickListener {
+            showListEditor("Loại máy", "Loại máy mới (vd. MDB 10đ)", typeItems) { refreshSummaries() }
+        }
+        d.btnEditSheet.setOnClickListener {
+            showListEditor("Danh sách sheet", "Tên sheet mới", sheetItems) { refreshSummaries() }
+        }
+        d.rowStaff.setOnClickListener { d.btnEditStaff.performClick() }
+        d.rowType.setOnClickListener { d.btnEditType.performClick() }
         d.swAutoMonth.isChecked = Store.autoMonth(this)
         d.sheetManualBox.visibility = if (d.swAutoMonth.isChecked) View.GONE else View.VISIBLE
         d.swAutoMonth.setOnCheckedChangeListener { _, on ->
@@ -897,17 +964,7 @@ class MainActivity : AppCompatActivity() {
                     .putString(SheetLogger.KEY_SHEET_LINK, sheet.ifEmpty { SheetLogger.DEFAULT_SHEET_LINK })
                     .putString(SheetLogger.KEY_URL, script)
                     .apply()
-                // Ô nhập còn chữ chưa bấm THÊM → vẫn thêm vào cho khỏi mất
-                d.etNewStaff.text.toString().trim()
-                    .takeIf { it.isNotEmpty() && staffItems.none { s -> s.equals(it, true) } }
-                    ?.let { staffItems += it }
-                d.etNewSheet.text.toString().trim()
-                    .takeIf { it.isNotEmpty() && sheetItems.none { s -> s.equals(it, true) } }
-                    ?.let { sheetItems += it }
                 Store.setAutoMonth(this, d.swAutoMonth.isChecked)
-                d.etNewType.text.toString().trim()
-                    .takeIf { it.isNotEmpty() && typeItems.none { s -> s.equals(it, true) } }
-                    ?.let { typeItems += it }
                 Store.setList(this, Store.KEY_TYPE_LIST, typeItems)
                 Store.setList(this, Store.KEY_STAFF_LIST, staffItems)
                 Store.setList(this, Store.KEY_SHEET_LIST, sheetItems.ifEmpty { mutableListOf(Store.DEFAULT_TAB) })

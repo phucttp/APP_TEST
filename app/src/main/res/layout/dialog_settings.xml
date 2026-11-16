@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Cài đặt: mỗi danh sách 1 dòng tóm tắt + nút SỬA (mở màn quản lý riêng) → hộp luôn gọn -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content">
@@ -8,113 +9,66 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:paddingHorizontal="24dp"
-        android:paddingTop="8dp">
+        android:paddingTop="4dp">
 
-        <!-- ===== Danh sách nhân viên ===== -->
+        <!-- ===== DANH SÁCH ===== -->
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:letterSpacing="0.1"
-            android:text="NHÂN VIÊN TEST"
-            android:textColor="@color/tc_text_muted"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+            style="@style/TcSection"
+            android:text="DANH SÁCH CHỌN" />
 
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/cgStaff"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp" />
-
+        <!-- Nhân viên test -->
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:baselineAligned="false"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+            android:id="@+id/rowStaff"
+            style="@style/TcSettingRow">
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:hint="Tên nhân viên mới">
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etNewStaff"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:imeOptions="actionDone"
-                    android:inputType="textPersonName|textCapWords"
-                    android:maxLines="1" />
-            </com.google.android.material.textfield.TextInputLayout>
-
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/tvStaffTitle"
+                    style="@style/TcRowTitle"
+                    android:text="Nhân viên test" />
+                <TextView
+                    android:id="@+id/tvStaffSum"
+                    style="@style/TcRowSummary" />
+            </LinearLayout>
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAddStaff"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:layout_marginStart="8dp"
-                android:backgroundTint="@color/tc_green"
-                android:text="+ THÊM" />
+                android:id="@+id/btnEditStaff"
+                style="@style/TcEditButton"
+                android:text="SỬA ›" />
         </LinearLayout>
 
-        <!-- ===== Danh sách loại máy ===== -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:letterSpacing="0.1"
-            android:text="LOẠI MÁY"
-            android:textColor="@color/tc_text_muted"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+        <View style="@style/TcDivider" />
 
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/cgType"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp" />
-
+        <!-- Loại máy -->
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:baselineAligned="false"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+            android:id="@+id/rowType"
+            style="@style/TcSettingRow">
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:hint="Loại máy mới">
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etNewType"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:imeOptions="actionDone"
-                    android:inputType="textCapWords"
-                    android:maxLines="1" />
-            </com.google.android.material.textfield.TextInputLayout>
-
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/tvTypeTitle"
+                    style="@style/TcRowTitle"
+                    android:text="Loại máy" />
+                <TextView
+                    android:id="@+id/tvTypeSum"
+                    style="@style/TcRowSummary" />
+            </LinearLayout>
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAddType"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:layout_marginStart="8dp"
-                android:backgroundTint="@color/tc_green"
-                android:text="+ THÊM" />
+                android:id="@+id/btnEditType"
+                style="@style/TcEditButton"
+                android:text="SỬA ›" />
         </LinearLayout>
 
-        <!-- ===== Danh sách sheet (tab) ===== -->
+        <!-- ===== SHEET ===== -->
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:letterSpacing="0.1"
-            android:text="SHEET (TAB TRONG BẢNG TÍNH)"
-            android:textColor="@color/tc_text_muted"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+            style="@style/TcSection"
+            android:layout_marginTop="18dp"
+            android:text="SHEET GHI DỮ LIỆU" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/swAutoMonth"
@@ -126,62 +80,36 @@
         <!-- Chỉ dùng khi TẮT chế độ theo tháng -->
         <LinearLayout
             android:id="@+id/sheetManualBox"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/cgSheet"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:baselineAligned="false"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <com.google.android.material.textfield.TextInputLayout
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+            style="@style/TcSettingRow">
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:hint="Tên sheet mới">
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etNewSheet"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:imeOptions="actionDone"
-                    android:inputType="text"
-                    android:maxLines="1" />
-            </com.google.android.material.textfield.TextInputLayout>
-
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/tvSheetTitle"
+                    style="@style/TcRowTitle"
+                    android:text="Danh sách sheet" />
+                <TextView
+                    android:id="@+id/tvSheetSum"
+                    style="@style/TcRowSummary" />
+            </LinearLayout>
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAddSheet"
-                android:layout_width="wrap_content"
-                android:layout_height="48dp"
-                android:layout_marginStart="8dp"
-                android:backgroundTint="@color/tc_green"
-                android:text="+ THÊM" />
-        </LinearLayout>
+                android:id="@+id/btnEditSheet"
+                style="@style/TcEditButton"
+                android:text="SỬA ›" />
         </LinearLayout>
 
+        <!-- ===== GOOGLE SHEET ===== -->
         <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:letterSpacing="0.1"
-            android:text="GOOGLE SHEET"
-            android:textColor="@color/tc_text_muted"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+            style="@style/TcSection"
+            android:layout_marginTop="18dp"
+            android:text="KẾT NỐI GOOGLE SHEET" />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:hint="Link bảng tính (docs.google.com/spreadsheets/...)">
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etSheetLink"
