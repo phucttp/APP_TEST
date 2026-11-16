@@ -1,0 +1,9 @@
+<!-- Biểu tượng quét mã: 4 góc khung + vạch mã -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#0055FF"
+        android:pathData="M3,3h6v2H5v4H3V3zM15,3h6v6h-2V5h-4V3zM3,15h2v4h4v2H3v-6zM19,15h2v6h-6v-2h4v-4z" />
+    <path android:fillColor="#111111"
+        android:pathData="M7,8h1.5v8H7zM10,8h1v8h-1zM12.5,8h2v8h-2zM16,8h1v8h-1z" />
+</vector>

@@ -1,0 +1,17 @@
+<resources>
+    <!-- Bộ màu "Titanium" lấy theo trang quản lý cuahangtudong -->
+    <color name="tc_black">#111111</color>
+    <color name="tc_black_soft">#1A1A1A</color>
+    <color name="tc_dark_gray">#222222</color>
+    <color name="tc_blue">#0055FF</color>
+    <color name="tc_green">#00CC66</color>
+    <color name="tc_red">#FF3333</color>
+    <color name="tc_amber">#FBBF24</color>
+    <color name="tc_bg">#F1F5F9</color>
+    <color name="tc_card">#FFFFFF</color>
+    <color name="tc_border">#CBD5E1</color>
+    <color name="tc_text">#111111</color>
+    <color name="tc_text_2">#475569</color>
+    <color name="tc_text_muted">#94A3B8</color>
+    <color name="tc_overlay">#F2111111</color>
+</resources>

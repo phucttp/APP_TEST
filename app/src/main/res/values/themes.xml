@@ -1,0 +1,103 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Theme sáng kiểu "Titanium": nền xám nhạt, chữ đen, nhấn xanh #0055FF, góc vuông vức -->
+    <style name="AppTheme" parent="Theme.Material3.Light">
+        <!-- Android 15+ ép vẽ tràn viền → thanh tiêu đề đè nội dung. Tắt cho các màn có action bar
+             (màn chính tự xử lý insets riêng trong MainActivity). -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement" tools:targetApi="35">true</item>
+        <item name="colorPrimary">@color/tc_blue</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">@color/tc_black</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="colorSecondaryContainer">@color/tc_dark_gray</item>
+        <item name="colorOnSecondaryContainer">#FFFFFF</item>
+        <item name="colorError">@color/tc_red</item>
+        <item name="colorPrimaryContainer">#E6EEFF</item>
+        <item name="colorSurface">@color/tc_card</item>
+        <item name="colorSurfaceContainerHigh">@color/tc_card</item>
+        <item name="colorSurfaceContainerHighest">@color/tc_card</item>
+        <item name="colorSurfaceContainer">@color/tc_card</item>
+        <item name="colorOnSurface">@color/tc_text</item>
+        <item name="colorOnSurfaceVariant">@color/tc_text_2</item>
+        <item name="colorOutline">@color/tc_border</item>
+        <item name="android:colorBackground">@color/tc_bg</item>
+        <item name="android:statusBarColor">@color/tc_black</item>
+        <item name="colorPrimaryDark">@color/tc_black</item>
+        <item name="shapeAppearanceSmallComponent">@style/TcShape</item>
+        <item name="shapeAppearanceMediumComponent">@style/TcShape</item>
+        <item name="shapeAppearanceCornerSmall">@style/TcShape</item>
+        <item name="shapeAppearanceCornerMedium">@style/TcShape</item>
+        <item name="shapeAppearanceCornerLarge">@style/TcShapeLg</item>
+        <item name="shapeAppearanceCornerExtraLarge">@style/TcShapeLg</item>
+        <item name="actionBarTheme">@style/TcActionBar</item>
+        <item name="actionBarStyle">@style/TcActionBarStyle</item>
+        <item name="materialButtonStyle">@style/TcButton</item>
+        <item name="materialAlertDialogTheme">@style/TcDialog</item>
+        <item name="elevationOverlayEnabled">false</item>
+    </style>
+
+    <!-- Hộp thoại trắng tinh, không ánh xanh do elevation overlay -->
+    <style name="TcDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">#FFFFFF</item>
+        <item name="colorSurfaceContainerHigh">#FFFFFF</item>
+        <item name="elevationOverlayEnabled">false</item>
+        <item name="backgroundTint">#FFFFFF</item>
+    </style>
+
+    <style name="AppTheme.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowBackground">@color/tc_black</item>
+    </style>
+
+    <style name="TcActionBar" parent="ThemeOverlay.Material3.Dark.ActionBar">
+        <item name="colorSurface">@color/tc_black</item>
+        <item name="colorOnSurface">#FFFFFF</item>
+        <item name="background">@color/tc_black</item>
+    </style>
+
+    <style name="TcActionBarStyle" parent="Widget.Material3.ActionBar.Solid">
+        <item name="background">@color/tc_black</item>
+        <item name="titleTextStyle">@style/TcActionBarTitle</item>
+        <item name="subtitleTextStyle">@style/TcActionBarSubtitle</item>
+    </style>
+    <style name="TcActionBarTitle" parent="TextAppearance.Material3.ActionBar.Title">
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+    <style name="TcActionBarSubtitle" parent="TextAppearance.Material3.ActionBar.Subtitle">
+        <item name="android:textColor">@color/tc_text_muted</item>
+    </style>
+
+    <style name="TcShape">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">6dp</item>
+    </style>
+    <style name="TcShapeLg">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">12dp</item>
+    </style>
+
+    <style name="TcButton" parent="Widget.Material3.Button">
+        <item name="shapeAppearance">@style/TcShape</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.04</item>
+        <item name="android:paddingLeft">6dp</item>
+        <item name="android:paddingRight">6dp</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+    <style name="TcButton.Outline" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="shapeAppearance">@style/TcShape</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="strokeColor">#66FFFFFF</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+
+    <!-- Chữ số liệu: font mono như trang web (JetBrains Mono → monospace hệ thống) -->
+    <style name="TcData">
+        <item name="android:fontFamily">monospace</item>
+    </style>
+</resources>
