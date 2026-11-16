@@ -120,9 +120,17 @@ class DriveUploader(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
         Store.markUploaded(ctx, name, fileId)
 
         // 3) Gắn link video vào ô Mã máy trên Sheet (lỗi cũng không sao, video đã lên Drive)
-        if (rowId.isNotEmpty()) SheetLogger.postAndRead(script, JSONObject()
+        // Script tạo năm/tháng/ngày + chuyển video vào (chỉ khi tải xong → không có thư mục rỗng),
+        // rồi gắn link vào ô Mã máy nếu có dòng nhật ký. Thử lại vài lần nếu mạng chập chờn.
+        val done = JSONObject()
             .put("action", "uploadDone").put("sheet", sheet).put("id", rowId)
-            .put("fileId", fileId).put("code", code))
+            .put("fileId", fileId).put("code", shotCode)
+            .put("date", shotDate).put("time", shotTime)
+        for (attempt in 1..3) {
+            val res = SheetLogger.postAndRead(script, done)
+            if (res != null && res.optBoolean("ok")) break
+            kotlinx.coroutines.delay(5000L * attempt)
+        }
         Result.success()
     }
 

@@ -12,7 +12,7 @@
     */
     const DEFAULT_TAB = 'Log';
     const TEMPLATE_TAB = 'Mẫu';
-    const SCRIPT_VERSION = 15; // ...13: tab tháng mới, 14: xoá app không xoá Drive, 15: Drive xếp năm/tháng/ngày + tên dd/MM/yy_MÃ
+    const SCRIPT_VERSION = 16; // ...14: xoá app không xoá Drive, 15: năm/tháng/ngày + tên dd/MM/yy_MÃ, 16: chỉ tạo thư mục khi tải xong
     const SEP_BG = '#d9ead3';     // nền dòng tách ngày (xanh nhạt)
     const SEP_FG = '#274e13';     // chữ dòng tách ngày (xanh đậm)
     const MD_SEP = 'qt_sep';      // đánh dấu ẩn: dòng này là dòng tách ngày, không phải lần quay
@@ -261,29 +261,44 @@
    * (Tháng/Ngày có số 0 phía trước để Drive xếp đúng thứ tự.)
    * Trùng tên trong ngày (test lại cùng máy) → thêm giờ quay: 16/11/26_VQR12345_1430.mp4
    */
-  function drivePlace_(d) {
+  /** Tìm thư mục con theo tên; create=false thì KHÔNG tạo (trả null nếu chưa có). */
+  function sub_(parent, name, create) {
+    if (!parent) return null;
+    const it = parent.getFoldersByName(name);
+    if (it.hasNext()) return it.next();
+    return create ? parent.createFolder(name) : null;
+  }
+
+  /**
+   * create=false: chỉ tính tên file (không tạo thư mục) — dùng lúc BẮT ĐẦU tải.
+   * create=true : tạo năm/tháng/ngày nếu chưa có — dùng khi tải XONG để chuyển video vào.
+   */
+  function drivePlace_(d, create) {
     const m = String(d.date || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     const now = new Date();
     const dd = m ? ('0' + m[1]).slice(-2) : Utilities.formatDate(now, Session.getScriptTimeZone(), 'dd');
     const MM = m ? ('0' + m[2]).slice(-2) : Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM');
     const yyyy = m ? m[3] : Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy');
-    const dayFolder = folder_(folder_(folder_(folder_(null, DRIVE_ROOT), yyyy), 'Tháng ' + MM), 'Ngày ' + dd);
+    const root = folder_(null, DRIVE_ROOT);
+    const dayFolder = sub_(sub_(sub_(root, yyyy, create), 'Tháng ' + MM, create), 'Ngày ' + dd, create);
 
     const code = String(d.code || '').trim() || String(d.name || 'video').replace(/\.mp4$/i, '');
     const base = dd + '/' + MM + '/' + yyyy.slice(-2) + '_' + code;
-    const exists = n => dayFolder.getFilesByName(n).hasNext();
+    const exists = n => (dayFolder ? dayFolder.getFilesByName(n).hasNext() : false) ||
+                        root.getFilesByName(n).hasNext();   // đang tải dở cùng tên
     let name = base + '.mp4';
     if (exists(name)) {
       const hhmm = String(d.time || '').replace(/[^0-9]/g, '').slice(0, 4);
       if (hhmm) name = base + '_' + hhmm + '.mp4';
       for (let i = 2; exists(name); i++) name = base + (hhmm ? '_' + hhmm : '') + '_' + i + '.mp4';
     }
-    return { folder: dayFolder, name: name };
+    return { root: root, folder: dayFolder, name: name };
   }
 
   function driveUploadInit_(d) {
-    const place = drivePlace_(d);
-    const folder = place.folder;
+    // KHÔNG tạo thư mục ngày lúc này: tải tạm vào thư mục gốc, xong mới chuyển (tránh thư mục rỗng)
+    const place = drivePlace_(d, false);
+    const folder = place.root;
     d.name = place.name;
     const res = UrlFetchApp.fetch(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink', {
@@ -307,8 +322,18 @@
 
   /** Tải xong: gắn link video vào ô "Mã máy" của dòng có ID tương ứng. */
   function driveUploadDone_(d) {
+    if (!d.fileId) return { ok: false, error: 'thiếu fileId' };
+    // Tải xong → giờ mới tạo năm/tháng/ngày (nếu chưa có) và chuyển video vào
+    let moved = false;
+    try {
+      const file = DriveApp.getFileById(String(d.fileId));
+      const place = drivePlace_(d, true);
+      file.moveTo(place.folder);
+      moved = true;
+    } catch (e) { console.warn('Chuyển video vào thư mục ngày lỗi: ' + e); }
+
     const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(String(d.sheet || DEFAULT_TAB));
-    if (!sh || !d.id || !d.fileId) return { ok: true, linked: false };
+    if (!sh || !d.id) return { ok: true, moved: moved, linked: false };
     const r = findRowById_(sh, d.id);
     if (!r) return { ok: true, linked: false };
     const col = header_(sh).indexOf(norm_('Mã máy')) + 1;
