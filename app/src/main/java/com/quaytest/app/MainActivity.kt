@@ -122,6 +122,8 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var stampStaff = ""
     @Volatile private var stampCustomer = ""
     @Volatile private var stampWarranty = ""
+    @Volatile private var stampActive = false          // chỉ vẽ chữ khi đang quay
+    private var stampThread: android.os.HandlerThread? = null
 
     /** Chỉ cho mở 1 hộp thoại một lúc — máy chậm, bấm 2 lần không bị chồng hộp. */
     private var activeDialog: AlertDialog? = null
@@ -217,6 +219,7 @@ class MainActivity : AppCompatActivity() {
         recording?.stop()
         recognizer.close()
         stampEffect?.close()
+        stampThread?.quitSafely()
     }
 
     // ================= BƯỚC 1: KHOANH VÙNG =================
@@ -555,10 +558,15 @@ class MainActivity : AppCompatActivity() {
             val preview = Preview.Builder().build()
             preview.setSurfaceProvider(b.preview.surfaceProvider)
 
+            // Máy yếu (RAM < 3.5GB) quay HD 720p cho mượt; máy khoẻ quay Full HD
+            val mem = android.app.ActivityManager.MemoryInfo().also {
+                (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(it)
+            }
+            val lowEnd = mem.totalMem < 3_500_000_000L
             val recorder = Recorder.Builder()
                 .setQualitySelector(
                     QualitySelector.from(
-                        Quality.FHD,
+                        if (lowEnd) Quality.HD else Quality.FHD,
                         FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
                     )
                 ).build()
@@ -583,13 +591,25 @@ class MainActivity : AppCompatActivity() {
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, vc)
             }
             videoCapture = vc
+            warmUpOcr()
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    /** Nạp sẵn bộ đọc chữ ML Kit ở nền → lần ĐỌC MÃ đầu tiên không bị khựng. */
+    private fun warmUpOcr() {
+        try {
+            val tiny = Bitmap.createBitmap(64, 32, Bitmap.Config.ARGB_8888)
+            recognizer.process(InputImage.fromBitmap(tiny, 0))
+                .addOnCompleteListener { tiny.recycle() }
+        } catch (e: Exception) { /* không quan trọng */ }
     }
 
     /** Vẽ khung thông tin góc trên-trái của video, kiểu Titanium (nền đen, vạch xanh, chữ mono). */
     private fun createStampEffect(): OverlayEffect {
+        // Vẽ trên LUỒNG NỀN riêng (trước đây vẽ trên luồng giao diện 30 lần/giây → bấm nút bị trễ)
+        val thread = android.os.HandlerThread("stamp-overlay").also { it.start(); stampThread = it }
         val effect = OverlayEffect(
-            CameraEffect.VIDEO_CAPTURE, 0, Handler(Looper.getMainLooper())
+            CameraEffect.VIDEO_CAPTURE, 0, Handler(thread.looper)
         ) { t -> Log.e(TAG, "Overlay error", t) }
 
         val bg = Paint().apply { color = Color.argb(170, 17, 17, 17) }
@@ -603,10 +623,22 @@ class MainActivity : AppCompatActivity() {
             typeface = Typeface.MONOSPACE
         }
         val fmt = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+        var cleared = false
+        var cachedSecond = -1L
+        var cachedClock = ""
 
         effect.setOnDrawListener { frame ->
             val c = frame.overlayCanvas
+            // Không quay → xoá lớp chữ 1 lần rồi thôi (không tốn CPU mỗi khung hình)
+            if (!stampActive) {
+                if (!cleared) { c.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR); cleared = true }
+                return@setOnDrawListener true
+            }
+            cleared = false
             c.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+            // Đồng hồ chỉ định dạng lại mỗi giây 1 lần
+            val sec = System.currentTimeMillis() / 1000
+            if (sec != cachedSecond) { cachedSecond = sec; cachedClock = fmt.format(Date(sec * 1000)) }
             val w = frame.size.width.toFloat()
             val h = frame.size.height.toFloat()
 
@@ -629,7 +661,7 @@ class MainActivity : AppCompatActivity() {
                 "NV: $stampStaff",
                 "KH: $stampCustomer",
                 stampWarranty.ifEmpty { null },
-                fmt.format(Date())
+                cachedClock
             )
             val codeText = "MÃ: $stampCode"
             val boxW = max(big.measureText(codeText), lines.maxOf { small.measureText(it) }) + pad * 3
@@ -682,6 +714,7 @@ class MainActivity : AppCompatActivity() {
         stampStaff = staff
         stampCustomer = customer + if (machineType.isNotEmpty()) "  |  $machineType" else ""
         stampWarranty = if (warrantyDate.isNotEmpty()) "BH tạo: $warrantyDate" else ""
+        stampActive = true
 
         var pending = vc.output.prepareRecording(this, opts)
         if (granted(Manifest.permission.RECORD_AUDIO)) pending = pending.withAudioEnabled()
@@ -709,6 +742,7 @@ class MainActivity : AppCompatActivity() {
             is VideoRecordEvent.Pause -> { paused = true; updateButtons() }
             is VideoRecordEvent.Resume -> { paused = false; updateButtons() }
             is VideoRecordEvent.Finalize -> {
+                stampActive = false
                 recording = null
                 paused = false
                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

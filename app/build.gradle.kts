@@ -17,7 +17,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Bản chạy thật: tối ưu + thu gọn code (nhanh và nhẹ hơn hẳn bản debug)
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Ký bằng khoá debug để cài đè lên bản đang dùng (cài nội bộ, không lên Play Store)
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
