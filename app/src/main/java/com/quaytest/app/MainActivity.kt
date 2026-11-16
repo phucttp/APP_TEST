@@ -841,7 +841,7 @@ class MainActivity : AppCompatActivity() {
                 recording = null
                 paused = false
                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                if (ev.outputResults.outputUri != Uri.EMPTY) onVideoSaved()
+                if (ev.outputResults.outputUri != Uri.EMPTY) onVideoSaved(ev.outputResults.outputUri)
                 else { toast("Lỗi quay video (mã lỗi ${ev.error})"); backToIdle() }
                 updateButtons()
             }
@@ -849,7 +849,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun onVideoSaved() {
+    private fun onVideoSaved(videoUri: Uri) {
         val row = JSONObject().apply {
             // Khớp cột sheet: Ngày | Tên khách | Mã mạch | Mã máy | Thời gian quay clip |
             //                  Người Test | Loại Máy | Ngày tạo bảo hành | Ghi Chú (+ cột kỹ thuật)
@@ -869,6 +869,8 @@ class MainActivity : AppCompatActivity() {
             put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
         }
         SheetLogger.enqueue(this, row)
+        // Tải video lên Google Drive (chạy nền, mặc định chỉ khi có Wi‑Fi)
+        DriveUploader.enqueue(this, videoUri, recFileName, row.optString("id"), recTab, confirmedCode.orEmpty())
         lifecycleScope.launch {
             val sent = SheetLogger.flush(this@MainActivity)
             val left = SheetLogger.pendingCount(this@MainActivity)
@@ -993,6 +995,10 @@ class MainActivity : AppCompatActivity() {
         d.btnEditSheet.setOnClickListener {
             showListEditor("Danh sách sheet", "Tên sheet mới", sheetItems) { refreshSummaries() }
         }
+        d.swDrive.isChecked = Store.driveOn(this)
+        d.swDriveWifi.isChecked = Store.driveWifiOnly(this)
+        d.swDriveWifi.isEnabled = d.swDrive.isChecked
+        d.swDrive.setOnCheckedChangeListener { _, on -> d.swDriveWifi.isEnabled = on }
         d.rowStaff.setOnClickListener { d.btnEditStaff.performClick() }
         d.rowType.setOnClickListener { d.btnEditType.performClick() }
         d.swAutoMonth.isChecked = Store.autoMonth(this)
@@ -1058,6 +1064,7 @@ class MainActivity : AppCompatActivity() {
                     .putString(SheetLogger.KEY_URL, script)
                     .apply()
                 Store.setAutoMonth(this, d.swAutoMonth.isChecked)
+                Store.setDrive(this, d.swDrive.isChecked, d.swDriveWifi.isChecked)
                 Store.setList(this, Store.KEY_TYPE_LIST, typeItems)
                 Store.setList(this, Store.KEY_STAFF_LIST, staffItems)
                 Store.setList(this, Store.KEY_SHEET_LIST, sheetItems.ifEmpty { mutableListOf(Store.DEFAULT_TAB) })

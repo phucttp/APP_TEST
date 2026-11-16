@@ -53,4 +53,6 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
+    // Tải video lên Google Drive chạy nền, tự thử lại khi mất mạng
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }

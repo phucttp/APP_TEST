@@ -1,0 +1,417 @@
+================================================================================
+  QUAY TEST — APP ANDROID QUAY VIDEO TEST SẢN PHẨM
+  Tài liệu tổng hợp tính năng để triển khai
+================================================================================
+
+Mục đích: nhân viên kỹ thuật quay video khi test từng thiết bị (máy bán hàng,
+mạch điều khiển...). Mỗi video gắn với mã thiết bị, tên khách, người test,
+loại máy, ngày tạo bảo hành; thông tin được ghi vào Google Sheet, video lưu
+trong máy và (tuỳ chọn) tải lên Google Drive.
+
+Mã nguồn tham khảo: repo APP_TEST (Kotlin + Apps Script). Tài liệu này mô tả
+HÀNH VI cần có; team triển khai có thể chọn cách làm khác nếu đạt cùng kết quả.
+
+--------------------------------------------------------------------------------
+MỤC LỤC
+  1. Tổng quan kỹ thuật
+  2. Màn hình chính & luồng quay (BẮT ĐẦU → khoanh mã → xác nhận → thông tin → quay)
+  3. Đọc mã thiết bị (OCR) và quét mã mạch (barcode/QR)
+  4. Camera: quay video, chữ in trên video, dọc/ngang, zoom, lấy nét
+  5. Hộp "Thông tin test" — các trường và quy tắc
+  6. Cài đặt
+  7. Lịch sử quay (video + nhật ký gộp chung)
+  8. Google Sheet (Apps Script) — cấu trúc, API, quy tắc trình bày
+  9. Google Drive (tải video lên) — trạng thái: đang làm
+ 10. Giao diện (màu, phông, bố cục)
+ 11. Hiệu năng & tương thích thiết bị
+ 12. Các lỗi đã gặp và cách xử lý (bài học)
+ 13. Cài đặt / triển khai cho máy mới
+ 14. Việc còn mở
+--------------------------------------------------------------------------------
+
+
+================================================================================
+1. TỔNG QUAN KỸ THUẬT
+================================================================================
+- Nền tảng: Android 10 trở lên (minSdk 29), targetSdk 35, compileSdk 36.
+- Ngôn ngữ: Kotlin. Build: Gradle 8.13, AGP 8.10.x, Kotlin 2.1.x, JDK 17+.
+- Thư viện chính:
+    + CameraX 1.4.x (core, camera2, lifecycle, video, view, effects)
+    + ML Kit Text Recognition (bản đóng gói offline) — đọc mã thiết bị
+    + Google Code Scanner (play-services-code-scanner) — quét mã vạch/QR mã mạch
+    + Material Components 3, RecyclerView, WorkManager (cho Drive)
+- Lưu trữ cục bộ: SharedPreferences (cài đặt, hàng chờ gửi Sheet), MediaStore
+  (video, thư mục Movies/QuayTest).
+- Backend: Google Apps Script gắn với 1 bảng tính Google Sheet, triển khai dạng
+  "Ứng dụng web" (Thực thi: chủ sở hữu; Truy cập: Bất kỳ ai). App giao tiếp qua
+  HTTPS GET/POST JSON tới link /exec. Điện thoại KHÔNG cần tài khoản Google.
+- Bản phát hành: release, bật R8 (minify + shrinkResources). Ký bằng khoá nội
+  bộ (cài trực tiếp APK, không qua Play Store).
+- Quyền Android: CAMERA, RECORD_AUDIO, INTERNET. Không cần quyền bộ nhớ (dùng
+  MediaStore, Android 10+).
+
+
+================================================================================
+2. MÀN HÌNH CHÍNH & LUỒNG QUAY
+================================================================================
+2.1 Bố cục
+  Dọc:
+    - Thanh trên (nền đen): "MÃ SẢN PHẨM" + mã hiện tại (chữ mono to; xám khi
+      chưa có, xanh lá khi đã xác nhận), dòng "NV: … • Sheet … • Loại máy",
+      đồng hồ ngày giờ chạy từng giây; nút "⚙ CÀI ĐẶT" bên phải.
+    - Vạch trạng thái 3dp dưới thanh trên:
+        xanh dương = chờ, xanh lá = đã có mã, đỏ = đang quay, vàng = tạm dừng.
+    - Khung camera ở giữa (chiếm phần lớn màn hình).
+    - Nút tròn đỏ to "● BẮT ĐẦU" ở GIỮA khung camera (chỉ hiện khi rảnh).
+    - Dưới cùng: nút "LỊCH SỬ QUAY (video + nhật ký)"; hàng "TẠM DỪNG" | "■ DỪNG".
+  Ngang: camera bên trái (rộng), cột phải 250dp chứa thông tin + các nút
+    (CÀI ĐẶT, LỊCH SỬ QUAY, TẠM DỪNG, DỪNG). Cùng id view với bản dọc.
+
+2.2 Luồng một lần quay
+  B1. Bấm BẮT ĐẦU.
+      - Nếu chưa có danh sách nhân viên hoặc loại máy → báo thiếu gì và mở Cài đặt.
+  B2. Màn khoanh vùng: hướng dẫn "Kéo tay khoanh vùng MÃ THIẾT BỊ" + 3 nút:
+        [NHẬP MÃ TAY]  [DÙNG KHUNG CŨ]  [HUỶ]
+      - Kéo 1 ngón → vẽ khung (vùng ngoài khung tối đi, viền xanh lá, 4 góc đậm).
+        Thả tay → tự lấy nét vào giữa khung rồi đọc chữ (OCR) trong khung.
+      - NHẬP MÃ TAY: bỏ qua khoanh vùng, mở thẳng ô nhập mã (bật bàn phím).
+      - DÙNG KHUNG CŨ: chỉ hiện khi đã từng khoanh VÀ đang cầm máy cùng chiều
+        với lúc khoanh (xoay máy thì khung cũ không còn khớp → ẩn nút).
+  B3. Hộp "Xác nhận mã thiết bị":
+      - Ô mã đã điền sẵn dòng đọc được tốt nhất; tối đa 5 gợi ý khác dạng chip
+        để chạm chọn. KHÔNG in toàn bộ chữ đọc được (sẽ đẩy nút ra ngoài màn).
+      - Nút: XÁC NHẬN | KHOANH LẠI | HUỶ. Mã trống → báo lỗi tại ô, không đóng hộp.
+  B4. Hộp "Thông tin test" (xem mục 5) → nút ● QUAY | SỬA MÃ | HUỶ.
+      Thiếu trường bắt buộc → báo đỏ tại ô, không cho quay.
+  B5. Đếm ngược 3‑2‑1 (số to giữa màn hình, có tiếng bíp mỗi giây, bíp dài khi
+      bắt đầu). Trong lúc đếm, nút DỪNG đổi thành HUỶ để huỷ.
+      Khung khoanh mã phải ẨN khi đếm ngược và khi quay.
+  B6. Đang quay: đồng hồ đỏ "● 00:12" trên khung camera; TẠM DỪNG/TIẾP TỤC;
+      DỪNG để kết thúc. Màn hình giữ sáng suốt lúc quay.
+  B7. Quay xong: lưu video, xếp dòng nhật ký gửi Sheet, (tuỳ chọn) xếp hàng tải
+      Drive; hộp "Đã lưu video <tên file>". Mã + tên khách + mã mạch + ghi chú
+      được xoá trắng cho máy tiếp theo; người test + loại máy GIỮ LẠI.
+
+2.3 Ràng buộc chung
+  - Mỗi lúc chỉ mở 1 hộp thoại (máy chậm hay bị bấm 2 lần → chồng hộp).
+  - Chạm ra ngoài ô nhập (vùng trống trong hộp thoại/màn hình) → ẩn bàn phím.
+  - Xoay máy KHÔNG được khởi động lại activity (configChanges): giữ nguyên hộp
+    thoại đang mở, mã đang xác nhận, các ô đang điền.
+  - Từ lúc đếm ngược đến khi quay xong: KHOÁ chiều màn hình; xong thì mở lại.
+
+
+================================================================================
+3. ĐỌC MÃ THIẾT BỊ (OCR) & QUÉT MÃ MẠCH
+================================================================================
+3.1 Mã thiết bị (Mã máy) — OCR
+  - Chụp ảnh khung xem trước (PreviewView.bitmap), cắt đúng vùng đã khoanh;
+    vùng nhỏ thì phóng to cạnh dài lên ~800px trước khi đọc.
+  - Lấy nét vào tâm khung trước khi đọc (FocusMeteringAction, tự nhả sau 3s).
+  - Nạp sẵn bộ OCR khi mở app (đọc thử ảnh 64x32) để lần đọc đầu không khựng.
+  - Chuẩn hoá mã: viết hoa; bỏ dấu tiếng Việt (Ả→A, Đ→D); chỉ giữ A‑Z 0‑9 "-"
+    và 1 khoảng trắng. Ưu tiên dòng có chữ số; xếp theo số ký tự chữ+số.
+  - Ô nhập mã: tắt bộ gõ tiếng Việt (inputType VISIBLE_PASSWORD +
+    NO_SUGGESTIONS + CAP_CHARACTERS) để "VA" không bị gõ thành "VẢ".
+  - Mã máy còn dùng để đặt tên file video: MÃ_yyyyMMdd_HHmmss.mp4
+    (ký tự ngoài A‑Z a‑z 0‑9 "-" thay bằng "_").
+
+3.2 Mã mạch — quét mã vạch / QR
+  - Nút 📷 ở cuối ô "Mã mạch" → mở trình quét của Google Play Services
+    (GmsBarcodeScanning, bật auto‑zoom). Không cần quyền camera riêng.
+  - GIỮ NGUYÊN VĂN kết quả quét (giữ "_", "/", ".", chữ thường...); chỉ cắt
+    khoảng trắng/xuống dòng ở 2 đầu. Gõ tay cũng không tự viết hoa/đổi ký tự.
+  - Lần quét đầu trên máy mới, Google có thể tải module quét vài giây (cần mạng).
+
+
+================================================================================
+4. CAMERA
+================================================================================
+4.1 Quay video
+  - CameraX: Preview + VideoCapture(Recorder), camera sau.
+  - Khung xem trước tỉ lệ 16:9 = khung video (thấy gì quay nấy).
+  - Chất lượng: máy RAM < 3.5GB quay HD 720p; máy khác Full HD 1080p
+    (fallback xuống SD nếu không hỗ trợ). Có ghi âm nếu được cấp quyền mic.
+  - Lưu qua MediaStore vào Movies/QuayTest; mô tả file "NV: … | KH: …".
+
+4.2 Chữ in trên video (OverlayEffect của CameraX, chỉ áp vào luồng VIDEO)
+  - Góc trên‑trái, kiểu "nhẹ": nền gần trong suốt (đen alpha ~55, bo góc),
+    chữ trắng phông mono có bóng mờ (shadow) để đọc được trên nền sáng.
+  - Nội dung:
+        MÃ: <mã máy>                (chữ to hơn)
+        NV: <người test>
+        KH: <tên khách>  |  <loại máy>
+        BH: 1 năm (tạo dd/MM/yyyy)  hoặc  BH: không
+        dd/MM/yyyy HH:mm:ss         (chạy theo giây thực)
+  - Xoay canvas theo frame.rotationDegrees để chữ luôn đứng thẳng trong video.
+  - Vẽ trên LUỒNG NỀN riêng (HandlerThread), chỉ vẽ khi đang quay; không quay
+    thì xoá lớp chữ 1 lần rồi bỏ qua. Định dạng đồng hồ 1 lần/giây.
+  - Máy không hỗ trợ effect → vẫn quay bình thường (không có chữ), báo 1 lần.
+
+4.3 Dọc / ngang
+  - Activity xoay tự do theo cảm biến, tôn trọng khoá xoay của máy
+    (screenOrientation = fullUser) + configChanges để không bị tạo lại.
+  - Khi xoay mà đang RẢNH → bind lại camera với targetRotation mới
+    (BẮT BUỘC: nếu chỉ đổi targetRotation, video quay ngang sẽ bị cắt theo
+    khung dọc rồi gắn cờ xoay → hình nhỏ như video dọc). Quay ngang phải ra
+    file khung ngang thật (vd 1280x720).
+  - Đang quay/đếm ngược: chiều đã khoá, chỉ gắn lại PreviewView mới.
+
+4.4 Zoom & lấy nét
+  - Chụm/banh 2 ngón trên khung camera → zoom (cả khi đang quay). Nhãn "1.0x"
+    góc trên‑phải hiện mức zoom; chạm nhãn → về 1x. Giữ mức zoom khi xoay.
+  - Chạm 1 ngón (khi không khoanh vùng) → lấy nét + đo sáng tại điểm chạm,
+    GIỮ nét (không tự nhả). Vòng tròn tại điểm chạm:
+        trắng = đang lấy nét, xanh lá = đã nét, đỏ = không lấy nét được.
+    Máy không hỗ trợ → báo rõ.
+  - Trong chế độ khoanh vùng: 1 ngón = khoanh, 2 ngón = zoom (huỷ khung đang kéo).
+
+
+================================================================================
+5. HỘP "THÔNG TIN TEST"
+================================================================================
+  Trường                 | Kiểu                     | Bắt buộc | Mặc định
+  -----------------------+--------------------------+----------+----------------------------
+  Mã máy                 | hiển thị (từ bước 3)     |   có     | —
+  Tên khách *            | ô nhập                   |   CÓ     | trống MỖI LẦN (không nhớ,
+                         |                          |          | không gợi ý tên cũ)
+  Loại máy *             | danh sách chọn (Cài đặt) |   CÓ     | loại gần nhất (nhớ cả khi
+                         |                          |          | tắt app)
+  Mã mạch                | ô nhập + nút quét 📷     |   không  | trống mỗi lần
+  Người test *           | danh sách chọn (Cài đặt) |   CÓ     | người gần nhất
+  Bảo hành               | Không / 6 tháng / 1 năm  |   —      | 1 NĂM mỗi lần
+                         | / 2 năm / 3 năm          |          |
+  Ghi vào sheet          | tự động theo tháng (khoá)|   —      | MM_yyyy (vd 11_2026);
+                         | hoặc chọn tab (chế độ tay)|         | xem mục 6
+  Ghi chú                | ô nhập nhiều dòng        |   không  | trống mỗi lần
+
+  - Thiếu trường bắt buộc: ô đó báo đỏ ("Nhập tên khách", "Chọn loại máy",
+    "Chọn người test"), hộp không đóng.
+  - Bảo hành: có chọn thời hạn → ghi "Ngày tạo bảo hành" = NGÀY TEST lên Sheet;
+    thời hạn CHỈ in trên video (Sheet không có cột thời hạn). "Không" → để trống.
+
+
+================================================================================
+6. CÀI ĐẶT (nút ⚙ CÀI ĐẶT)
+================================================================================
+  Hộp gọn, chia nhóm; mỗi danh sách chỉ 1 dòng tóm tắt + nút "SỬA ›":
+    DANH SÁCH CHỌN
+      Nhân viên test (n)   "Phúc, Tuấn, Tài"            [SỬA ›]
+      Loại máy (n)         "MDB 10đ, V2, Điện Trở..."   [SỬA ›]
+    SHEET GHI DỮ LIỆU
+      [x] Tự tạo sheet theo tháng (vd. 11_2026)   (mặc định BẬT)
+      Danh sách sheet (n)  [SỬA ›]   ← chỉ hiện khi TẮT chế độ theo tháng
+    GOOGLE DRIVE           (xem mục 9)
+      [x] Tự tải video lên Google Drive
+      [x] Chỉ tải khi có Wi‑Fi
+    KẾT NỐI GOOGLE SHEET
+      Link bảng tính (chỉ để nút MỞ SHEET)
+      Link Apps Script (…/exec)  — dán nhầm ô thì tự xếp lại cho đúng
+      [THỬ KẾT NỐI] [MỞ SHEET]; dòng trạng thái (OK / lỗi / còn n dòng chờ gửi)
+    Nút: HUỶ | LƯU  — chỉ LƯU mới ghi thay đổi (kể cả danh sách).
+
+  Màn quản lý danh sách ("SỬA ›"):
+    - Ô nhập + nút "+ THÊM" ở trên (Enter cũng thêm); trùng tên → báo "Đã có".
+    - Danh sách trong khung CAO CỐ ĐỊNH (~240dp), cuộn bên trong, mỗi dòng có
+      nút 🗑 (hỏi xác nhận). Không được làm hộp Cài đặt phình ra.
+    - Nút XONG → quay về Cài đặt (vẫn phải bấm LƯU).
+  - Danh sách loại máy lần đầu lấy từ các loại đã từng nhập (nếu có).
+  - Xoá nhân viên đang chọn → bỏ chọn.
+
+
+================================================================================
+7. LỊCH SỬ QUAY (một nút duy nhất, gộp video + nhật ký)
+================================================================================
+  - Mỗi dòng = 1 lần quay, ghép video trong máy với dòng nhật ký theo TÊN FILE:
+      ảnh thu nhỏ video | MÃ | ngày giờ • KH • loại máy • NV | thời lượng, dung lượng,
+      "BH tạo: dd/MM/yyyy" | nhãn trạng thái:
+        ĐÃ LƯU SHEET (xanh lá) / CHƯA GỬI (vàng, đang chờ mạng) /
+        CHỈ CÓ VIDEO (xám, chưa có dòng nhật ký)
+      (Drive) "☁ Đã lên Drive" / "⏳ Chờ tải Drive"
+  - Video quay ở máy khác: hiện "Không có video trong máy".
+  - Ô tìm kiếm (mã / khách / nhân viên / loại máy) + nút TẢI.
+  - Nút "SHEET: <tab> ▾" trên thanh tiêu đề: liệt kê TAB THẬT trong bảng tính
+    (lấy từ script; ẩn tab bắt đầu bằng "_"); mặc định tab tháng hiện tại.
+  - Chạm = mở video bằng trình xem của máy.
+  - Giữ lâu → "Xoá lần quay <mã>?" liệt kê sẽ xoá gì, rồi xoá THEO THỨ TỰ:
+      1) dòng trên Sheet (lỗi mạng → DỪNG, không xoá gì để tránh lệch dữ liệu)
+      2) dòng đang chờ gửi
+      3) video trong máy
+      4) (Drive) huỷ tải nếu đang chờ; script tự bỏ video trên Drive vào thùng rác
+    Dòng nhập tay trên Sheet (không có ID) → chỉ xoá được video, nhắc xoá tay.
+  - Kiểm tra phiên bản script trước khi gửi lệnh xoá (bản cũ hiểu nhầm thành ghi
+    thêm dòng rác) → nếu cũ, hiện hướng dẫn cập nhật script.
+
+
+================================================================================
+8. GOOGLE SHEET (APPS SCRIPT)
+================================================================================
+8.1 Cấu trúc 1 tab (ghi THEO TÊN CỘT ở dòng 1, không theo vị trí)
+  Ngày | Tên khách | Mã mạch | Mã máy | Thời gian quay clip | Người Test |
+  Loại Máy | Ngày tạo bảo hành | Ghi Chú
+  - Không có cột kỹ thuật. ID dòng + tên file được lưu ẨN bằng Developer
+    Metadata gắn vào hàng (key "qt_id", "qt_file"). Bản cũ có cột ID/Tên file/
+    Thời lượng/Thiết bị/Ghi lúc → script tự chuyển vào metadata rồi xoá cột.
+  - Cột ngày ghi bằng giá trị Date thật; cột mã ghi kèm tiền tố "'" để giữ số 0
+    đầu và không bị tự đổi kiểu.
+
+8.2 Tab theo tháng
+  - Mặc định mỗi tháng 1 tab tên MM_yyyy. Tab chưa có → NHÂN BẢN từ tab "Mẫu"
+    (nếu có) hoặc tab tháng gần nhất, rồi xoá dữ liệu, gỡ ô gộp, gỡ màu/viền
+    dòng tách ngày, trả cột Ngày về định dạng ngày, xoá metadata cũ
+    → giữ nguyên định dạng/phông/kiểu bảng người dùng làm.
+  - Không có tab mẫu → tạo tiêu đề nền #356853 chữ trắng đậm, cố định dòng 1.
+
+8.3 Trình bày tự động
+  - Dòng tiêu đề luôn xanh lá #356853, chữ trắng, đậm.
+  - Xoá các cột TRỐNG phía sau bảng (J, K, L...); cột người dùng tự thêm có dữ
+    liệu thì giữ.
+  - Độ rộng cột co giãn VỪA KHÍT nội dung dài nhất (giãn và cả co), + lề ~36px
+    cho icon/mũi tên lọc, tối thiểu 70px. Chạy sau mỗi lần ghi/xoá và khi
+    người dùng sửa tay (trigger onEdit).
+  - DÒNG TÁCH NGÀY: máy đầu tiên của 1 ngày mới → chèn trước 1 dòng
+      GỘP NGANG toàn bộ cột, nội dung "▼ Thứ Hai, 16/11/2026" căn giữa,
+      nền #d9ead3, chữ #274e13 đậm, viền trên dày màu #274e13.
+    Đánh dấu bằng metadata "qt_sep" VÀ nhận diện theo ký tự "▼" ở ô đầu
+    (dòng bị kéo/dán tay mất metadata vẫn nhận ra).
+  - TỰ DỌN: dòng dữ liệu bị xoá trắng hoàn toàn → xoá hẳn dòng; ngày không còn
+    máy nào → xoá dòng tách ngày. Chạy khi xoá từ app, trước mỗi lần ghi, và
+    khi người dùng xoá trắng ô trên Sheet (onEdit, e.value undefined).
+  - Lưu ý cho người dùng: vùng có ô gộp không sắp xếp được → dùng bộ lọc.
+
+8.4 API của web app (link …/exec)
+  GET  ?action=tabs                         → {ok, version, tabs:[...]}
+  GET  ?action=tidy                         → dọn + canh cột mọi tab có cột "Mã máy"
+  GET  ?sheet=<tab>&limit=N&q=<từ khoá>     → {ok, version, sheet, total, rows:[
+          {date, customer, board, code, time, staff, type, warranty_date, note,
+           id, file}]}   (mới nhất trước; bỏ dòng trống + dòng tách ngày)
+  POST {id, sheet, date, customer, board, code, time, staff, type,
+        warranty_date, note, file}          → ghi 1 dòng
+        (ID đã có → {ok, duplicate:true}, không ghi lại)
+  POST {action:"delete", sheet, id}         → {ok, deleted:true|false}
+  POST {action:"uploadInit", name, size, mime, sheet} → {ok, uploadUrl}   (Drive)
+  POST {action:"uploadDone", sheet, id, fileId, code}  → {ok, linked, url}  (Drive)
+  - Phản hồi POST của Apps Script là 302 → app phải theo Location (GET) để đọc JSON.
+  - Mọi thao tác ghi chạy trong LockService (chống ghi chồng).
+  - version hiện tại: 12. App dựa vào version để bật tính năng
+    (>=2 xoá, >=3 danh sách tab, >=4 ID ẩn, >=12 Drive).
+
+8.5 Phía app
+  - Mỗi lần quay sinh 1 ID (UUID). Dòng nhật ký vào HÀNG CHỜ trong máy trước,
+    rồi gửi; mất mạng → giữ lại, gửi bù ở lần quay sau / lúc mở app / khi lưu
+    Cài đặt. Dòng thêm cả "sheet" = tab tính tại lúc BẮT ĐẦU quay.
+  - Báo kết quả: "Đã ghi lên Google Sheet" / "Chưa gửi được (n dòng)" /
+    "Chưa cài link Apps Script — n dòng đang chờ".
+
+8.6 Cài script (một lần, trên máy tính, tài khoản chủ bảng tính)
+  Bảng tính → Tiện ích mở rộng → Apps Script → dán Code.gs → Lưu →
+  Triển khai → Tùy chọn triển khai mới → Ứng dụng web
+  (Thực thi: Tôi; Quyền truy cập: Bất kỳ ai) → cấp quyền → copy link /exec.
+  Sửa code sau này: Lưu → Triển khai → Quản lý → ✏️ → "Phiên bản mới" →
+  Triển khai (KHÔNG tạo triển khai mới, sẽ ra link khác).
+  Lỗi hay gặp: trình duyệt đăng nhập nhiều tài khoản → link có "/u/1/" mở không
+  được; dùng link dạng …/macros/s/<ID>/exec hoặc cửa sổ ẩn danh.
+
+
+================================================================================
+9. GOOGLE DRIVE — TẢI VIDEO LÊN  [ĐANG LÀM, CHƯA BUILD/THỬ]
+================================================================================
+  Yêu cầu: không lưu Gmail/mật khẩu trên điện thoại. ("App password" của Google
+  KHÔNG dùng được với Drive — chỉ cho SMTP/IMAP.)
+  Thiết kế:
+    1. Quay xong → WorkManager xếp việc tải (tên duy nhất "drive_<file>",
+       mạng UNMETERED nếu "Chỉ Wi‑Fi", thử lại luỹ thừa từ 1 phút, tối đa ~8 lần).
+    2. Worker: gửi bù hàng chờ Sheet trước; dòng chưa lên Sheet → thử lại sau.
+    3. POST uploadInit → script dùng ScriptApp.getOAuthToken() gọi Drive API
+       v3 "uploadType=resumable", tạo file trong "QuayTest Video/<tab>/",
+       trả về uploadUrl (link phiên tải lên, không cần đăng nhập).
+    4. App PUT toàn bộ video lên uploadUrl (stream 256KB, fixed-length).
+       Phản hồi 200/201 có "id" → ghi nhận file đã lên Drive (trong máy).
+    5. POST uploadDone → script gắn link https://drive.google.com/file/d/<id>/view
+       vào ô "Mã máy" (rich text link). Sheet vẫn 9 cột.
+    6. Xoá lần quay → script lấy link ở ô Mã máy, bỏ file Drive vào thùng rác
+       (khôi phục được 30 ngày); app huỷ việc tải nếu còn chờ.
+  Đã làm: Code.gs v12 (uploadInit/uploadDone/xoá Drive), DriveUploader
+  (WorkManager), mục GOOGLE DRIVE trong Cài đặt, gọi tải sau khi quay.
+  Còn lại: hiện trạng thái Drive trong Lịch sử quay, huỷ tải khi xoá, build,
+  thử thực tế (đặc biệt: xác nhận PUT lên uploadUrl không cần header xác thực).
+  Khi cập nhật script lên v12, Google sẽ hỏi cấp thêm quyền Drive + gọi URL
+  ngoài (1 lần trên máy tính).
+
+
+================================================================================
+10. GIAO DIỆN
+================================================================================
+  - Bộ màu "Titanium" (theo trang quản trị của công ty):
+      đen #111111 / #1A1A1A / #222222, xanh #0055FF, xanh lá #00CC66,
+      đỏ #FF3333, vàng #FBBF24, nền sáng #F1F5F9, viền #CBD5E1,
+      chữ #111111 / #475569 / mờ #94A3B8.
+  - Phông: số liệu & mã dùng monospace; còn lại phông hệ thống.
+  - Nút góc bo 6dp, chữ đậm. Nút bị khoá → mờ (alpha 0.3).
+  - Hộp thoại nền trắng (tắt ánh màu elevation overlay của Material 3).
+  - Màn chính tự xử lý insets (thanh trạng thái, thanh vuốt; ColorOS báo inset
+    thanh vuốt chỉ 2px → chừa tối thiểu 20dp dưới đáy).
+  - Các màn có thanh tiêu đề: tắt ép edge‑to‑edge (Android 15+), tiêu đề nền đen
+    chữ trắng.
+
+
+================================================================================
+11. HIỆU NĂNG & TƯƠNG THÍCH
+================================================================================
+  Đã thử trên: Realme RMX3690 (Android 12, 2GB RAM, rất yếu) và
+  Samsung SM‑A256E (Android 16, 8GB RAM).
+  - Mở app ~0.8s trên máy 2GB (bản release).
+  - Chữ trên video vẽ ở luồng nền, chỉ khi quay (trước đó vẽ ở luồng giao diện
+    30 lần/giây → bấm nút bị trễ rõ rệt).
+  - PreviewView chế độ PERFORMANCE (SurfaceView).
+  - Bản release R8 (~46MB, phần lớn là model OCR offline) thay vì debug (~70MB).
+  - Máy yếu quay 720p.
+
+
+================================================================================
+12. LỖI ĐÃ GẶP & CÁCH XỬ LÝ (bài học)
+================================================================================
+  1. Hộp xác nhận mã in toàn bộ chữ OCR (khi chưa khoanh) → đẩy nút ra ngoài
+     → chỉ hiện 1 mã + ≤5 gợi ý; bắt buộc khoanh hoặc nhập tay.
+  2. Bàn phím tiếng Việt tự thêm dấu vào mã ("VA"→"VẢ") → tắt IME cho ô mã,
+     bỏ dấu khi chuẩn hoá.
+  3. Bấm 2 lần trên máy chậm → mở 2 hộp chồng nhau → chỉ cho 1 hộp một lúc.
+  4. Nút Material bị xếp dọc và che mất khi chữ nút dài → chữ nút ngắn.
+  5. Danh sách chip trong Cài đặt phình to → tách ra màn quản lý riêng.
+  6. Quay ngang ra video dọc bị cắt (720x1280 + cờ xoay 270°) → bind lại camera
+     khi xoay.
+  7. Chạm lấy nét "không ăn" → nét tự nhả sau 4s + không có phản hồi → giữ nét
+     + vòng tròn trạng thái.
+  8. Android 15+ edge‑to‑edge làm thanh tiêu đề đè nội dung → opt‑out trong theme.
+  9. Apps Script: sửa code nhưng quên "Phiên bản mới" → link vẫn chạy code cũ;
+     mấy phút đầu sau triển khai có thể còn trả bản cũ.
+ 10. Apps Script trả 302 cho POST → coi 302 là thành công khi ghi; muốn đọc kết
+     quả phải theo Location.
+ 11. Dòng tách ngày bị kéo/dán tay mất metadata → nhận diện thêm theo "▼".
+ 12. Đọc ID từ ảnh chụp màn hình dễ nhầm chữ I hoa và l thường.
+ 13. Bản release không cho đọc dữ liệu app qua adb (run-as) → muốn sao chép cài
+     đặt giữa máy phải làm tính năng xuất/nhập trong app (chưa có).
+
+
+================================================================================
+13. CÀI ĐẶT CHO MÁY MỚI
+================================================================================
+  1. Bật Tuỳ chọn nhà phát triển → Gỡ lỗi không dây (hoặc chép APK vào máy).
+  2. Cài app-release.apk (cài đè được lên bản cùng chữ ký, không mất dữ liệu).
+  3. Mở app → cấp quyền Camera, Micro.
+  4. ⚙ CÀI ĐẶT: dán link Apps Script, THỬ KẾT NỐI; thêm Nhân viên, Loại máy;
+     bật/tắt Drive; LƯU.
+  5. Quay thử 1 lần, kiểm tra dòng trên Sheet, xoá thử trong Lịch sử quay.
+
+
+================================================================================
+14. VIỆC CÒN MỞ
+================================================================================
+  - Hoàn thiện & thử Google Drive (mục 9).
+  - Xuất/nhập cài đặt giữa các máy (QR hoặc file) — hiện phải nhập tay từng máy.
+  - Xác nhận trên máy thật: video quay ngang đúng 1280x720 / 1920x1080; vòng
+    lấy nét chuyển xanh.
+  - Bảo mật: repo mã nguồn nên để Private; bảng tính nên để chia sẻ "Hạn chế"
+    (link bảng tính có trong code; app vẫn chạy vì script dùng quyền chủ sở hữu).
+  - Ký bản release bằng khoá riêng (hiện dùng khoá debug cho tiện cài đè).
+
+================================================================================

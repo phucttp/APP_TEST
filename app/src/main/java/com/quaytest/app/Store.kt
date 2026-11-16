@@ -43,6 +43,26 @@ object Store {
 
     fun staffList(ctx: Context) = getList(ctx, KEY_STAFF_LIST)
 
+    // ===== Google Drive =====
+    const val KEY_DRIVE_ON = "drive_upload_on"
+    const val KEY_DRIVE_WIFI = "drive_wifi_only"
+    private const val KEY_DRIVE_DONE = "drive_uploaded"   // {tên file: fileId}
+    // Mặc định TẮT cho tới khi tính năng Drive được thử xong
+    fun driveOn(ctx: Context) = prefs(ctx).getBoolean(KEY_DRIVE_ON, false)
+    fun driveWifiOnly(ctx: Context) = prefs(ctx).getBoolean(KEY_DRIVE_WIFI, true)
+    fun setDrive(ctx: Context, on: Boolean, wifiOnly: Boolean) =
+        prefs(ctx).edit().putBoolean(KEY_DRIVE_ON, on).putBoolean(KEY_DRIVE_WIFI, wifiOnly).apply()
+
+    @Synchronized fun markUploaded(ctx: Context, file: String, fileId: String) {
+        val o = try { org.json.JSONObject(prefs(ctx).getString(KEY_DRIVE_DONE, "{}")!!) } catch (e: Exception) { org.json.JSONObject() }
+        o.put(file, fileId)
+        prefs(ctx).edit().putString(KEY_DRIVE_DONE, o.toString()).apply()
+    }
+    @Synchronized fun uploadedFiles(ctx: Context): Set<String> {
+        val o = try { org.json.JSONObject(prefs(ctx).getString(KEY_DRIVE_DONE, "{}")!!) } catch (e: Exception) { return emptySet() }
+        return o.keys().asSequence().toSet()
+    }
+
     const val KEY_TYPE_LIST = "type_list"
     /** Danh sách loại máy (quản lý trong Cài đặt). Lần đầu: lấy từ các loại đã từng nhập. */
     fun typeList(ctx: Context): List<String> =

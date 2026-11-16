@@ -100,6 +100,35 @@
                 android:text="SỬA ›" />
         </LinearLayout>
 
+        <!-- ===== GOOGLE DRIVE ===== -->
+        <TextView
+            style="@style/TcSection"
+            android:layout_marginTop="18dp"
+            android:text="GOOGLE DRIVE" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/swDrive"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Tự tải video lên Google Drive"
+            android:textSize="14sp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/swDriveWifi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Chỉ tải khi có Wi‑Fi (đỡ tốn 4G)"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tvDriveNote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Video lưu ở Drive của tài khoản chủ Sheet, thư mục 'QuayTest Video/tháng'. Ô Mã máy trên Sheet sẽ có link mở video."
+            android:textColor="@color/tc_text_2"
+            android:textSize="12sp" />
+
         <!-- ===== GOOGLE SHEET ===== -->
         <TextView
             style="@style/TcSection"

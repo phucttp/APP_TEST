@@ -77,13 +77,13 @@ object SheetLogger {
     }
 
     /** POST rồi đọc kết quả JSON (Apps Script trả 302 → GET trang kết quả). */
-    private fun postAndRead(url: String, body: JSONObject): JSONObject? {
+    fun postAndRead(url: String, body: JSONObject): JSONObject? {
         var conn: HttpURLConnection? = null
         return try {
             conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15000
-                readTimeout = 30000
+                readTimeout = 90000   // tạo tab tháng mới (nhân bản + dọn + canh cột) có thể lâu
                 doOutput = true
                 instanceFollowRedirects = false
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -145,7 +145,11 @@ object SheetLogger {
             val sentIds = HashSet<String>()
             for (i in 0 until snapshot.length()) {
                 val row = snapshot.getJSONObject(i)
-                if (post(url, row)) sentIds += row.optString("id") else break // mất mạng → dừng, lần sau gửi tiếp
+                // Đọc KẾT QUẢ script: chỉ coi là đã gửi khi script báo ok (hoặc dòng đã có sẵn).
+                // Script lỗi / mất mạng / quá lâu → giữ lại trong hàng chờ, lần sau gửi tiếp
+                // (gửi lại không bị trùng vì script bỏ qua ID đã có).
+                val res = postAndRead(url, row)
+                if (res != null && res.optBoolean("ok")) sentIds += row.optString("id") else break
             }
             if (sentIds.isNotEmpty()) synchronized(lock) {
                 val cur = load(ctx)
