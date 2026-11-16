@@ -166,10 +166,22 @@ class MainActivity : AppCompatActivity() {
 
         setupUi()
 
-        val need = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+        // Camera + micro bắt buộc; thông báo (Android 13+) để nhắc đồng bộ 16:00 — từ chối vẫn dùng app được
+        val need = listOfNotNull(
+            Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO,
+            if (Build.VERSION.SDK_INT >= 33) Manifest.permission.POST_NOTIFICATIONS else null
+        ).toTypedArray()
         if (need.all { granted(it) }) startCamera() else permLauncher.launch(need)
 
         lifecycleScope.launch { SheetLogger.flush(this@MainActivity) }
+        // Nhắc đồng bộ Drive 16:00 + dọn video đã lên Drive quá 14 ngày
+        Reminder.scheduleNext(this)
+        lifecycleScope.launch(Dispatchers.IO) {
+            val n = Reminder.cleanupOld(this@MainActivity)
+            if (n > 0) withContext(Dispatchers.Main) {
+                toast("Đã dọn $n video cũ (>${Reminder.KEEP_DAYS} ngày, đã có trên Drive)")
+            }
+        }
     }
 
     /**

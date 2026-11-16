@@ -12,7 +12,7 @@
     */
     const DEFAULT_TAB = 'Log';
     const TEMPLATE_TAB = 'Mẫu';
-    const SCRIPT_VERSION = 13; // ...11: nhận "▼", 12: Google Drive, 13: tạo tab tháng mới không làm mất dòng đầu
+    const SCRIPT_VERSION = 14; // ...12: Drive, 13: tab tháng mới không mất dòng đầu, 14: xoá từ app không xoá video Drive
     const SEP_BG = '#d9ead3';     // nền dòng tách ngày (xanh nhạt)
     const SEP_FG = '#274e13';     // chữ dòng tách ngày (xanh đậm)
     const MD_SEP = 'qt_sep';      // đánh dấu ẩn: dòng này là dòng tách ngày, không phải lần quay
@@ -392,8 +392,7 @@
           migrate_(sh);
           const r = findRowById_(sh, d.id);
           if (!r) return json({ ok: true, deleted: false });
-          // Video đã lên Drive (ô Mã máy có link) → bỏ vào thùng rác Drive (khôi phục được 30 ngày)
-          try { trashLinkedVideo_(sh, r); } catch (e) { /* không chặn việc xoá dòng */ }
+          // Video đã lên Drive: KHÔNG đụng tới file trên Drive (chỉ xoá trên Drive bằng tay mới mất)
           // Máy cuối cùng của ngày đó → xoá luôn dòng tách ngày phía trên
           const seps = sepRows_(sh);
           const aboveIsSep = seps[r - 1] === true;

@@ -115,28 +115,68 @@ class SheetLogActivity : AppCompatActivity() {
             it.video != null && it.file.isNotEmpty() && it.file !in uploadedFiles && it.file !in uploadingFiles
         }
         if (todo.isEmpty()) { toast("Không còn video nào cần tải lên Drive"); return }
-        val mb = todo.sumOf { it.video!!.size } / (1024.0 * 1024.0)
+
+        // Danh sách có ô tick (mặc định chọn hết) → người dùng bỏ tick video không muốn tải
+        val checked = BooleanArray(todo.size) { true }
+        val labels = todo.map {
+            String.format(Locale.US, "%s  •  %s %s  •  %.0f MB",
+                it.code.ifEmpty { "(không mã)" }, it.date, it.time, it.video!!.size / 1048576.0)
+        }.toTypedArray()
         val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         val metered = cm.isActiveNetworkMetered
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Đồng bộ Google Drive")
-            .setMessage(String.format(Locale.US, "Tải %d video (~%.0f MB) lên Drive?", todo.size, mb) +
-                (if (metered) "\n\n⚠ Đang dùng 4G/dữ liệu di động — có thể tốn dung lượng." else "") +
-                "\n\nTải chạy nền, có thể thoát app; mất mạng sẽ tự thử lại.")
-            .setPositiveButton("TẢI LÊN") { _, _ ->
-                todo.forEach {
+
+        val dlg = MaterialAlertDialogBuilder(this)
+            .setTitle("Chọn video tải lên Drive (${todo.size})")
+            .setMultiChoiceItems(labels, checked) { _, which, on -> checked[which] = on }
+            .setPositiveButton("TẢI LÊN", null)
+            .setNeutralButton("BỎ CHỌN HẾT", null)
+            .setNegativeButton("HUỶ", null)
+            .show()
+        // Nút "chọn hết / bỏ chọn hết" đổi qua lại, không đóng hộp
+        dlg.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener { btn ->
+            val all = checked.any { !it }
+            checked.indices.forEach { i -> checked[i] = all; dlg.listView.setItemChecked(i, all) }
+            (btn as android.widget.Button).text = if (all) "BỎ CHỌN HẾT" else "CHỌN HẾT"
+        }
+        dlg.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val pick = todo.filterIndexed { i, _ -> checked[i] }
+            if (pick.isEmpty()) { toast("Chưa chọn video nào"); return@setOnClickListener }
+            val mb = pick.sumOf { it.video!!.size } / 1048576.0
+            dlg.dismiss()
+            val go = {
+                pick.forEach {
                     DriveUploader.enqueue(this, it.video!!.uri, it.file,
                         if (it.status == Status.VIDEO_ONLY) "" else it.id, tab, it.code, manual = true)
                 }
-                toast("Đã xếp ${todo.size} video vào hàng tải lên Drive")
+                toast(String.format(Locale.US, "Đang tải %d video (~%.0f MB) lên Drive — chạy nền, có thể thoát app", pick.size, mb))
             }
-            .setNegativeButton("HUỶ", null)
-            .show()
+            if (metered) {
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Đang dùng 4G / dữ liệu di động")
+                    .setMessage(String.format(Locale.US, "Tải ~%.0f MB có thể tốn dung lượng. Vẫn tải?", mb))
+                    .setPositiveButton("VẪN TẢI") { _, _ -> go() }
+                    .setNegativeButton("ĐỢI WI‑FI", null)
+                    .show()
+            } else go()
+        }
     }
 
     override fun onResume() {
         super.onResume()
         load()
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
+    /** Mở từ thông báo nhắc 16:00 → tải danh sách xong thì mở luôn hộp chọn video đồng bộ. */
+    private fun maybeAutoSync() {
+        if (intent?.getBooleanExtra(Reminder.EXTRA_SYNC, false) == true) {
+            intent.removeExtra(Reminder.EXTRA_SYNC)
+            askSyncDrive()
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean { finish(); return true }
@@ -227,6 +267,8 @@ class SheetLogActivity : AppCompatActivity() {
                 remote == null -> "Không tải được Sheet (mất mạng?) — đang hiện dữ liệu trong máy"
                 else -> "Tab $tab: ${remote.optInt("total")} dòng • hiện ${shown.size}"
             }
+            uploadedFiles = Store.uploadedFiles(this@SheetLogActivity)
+            maybeAutoSync()
         }
     }
 
@@ -266,6 +308,19 @@ class SheetLogActivity : AppCompatActivity() {
     }
 
     private fun askDelete(it: Item) {
+        // Đã lên Drive → chỉ xoá bản trong máy; dòng Sheet + video trên Drive GIỮ NGUYÊN
+        if (it.file.isNotEmpty() && it.file in uploadedFiles) {
+            if (it.video == null) { toast("Video này chỉ còn trên Drive — muốn xoá thì xoá trên Google Drive"); return }
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Xoá video ${it.code} khỏi máy?")
+                .setMessage("Video đã có trên Google Drive.\n\n• Chỉ xoá bản trong điện thoại\n" +
+                    "• Dòng trên Sheet và video trên Drive được GIỮ NGUYÊN (ô Mã máy vẫn mở được video)\n\n" +
+                    "Muốn xoá hẳn thì xoá trên Google Drive.")
+                .setPositiveButton("XOÁ KHỎI MÁY") { _, _ -> deleteLocalOnly(it) }
+                .setNegativeButton("HUỶ", null)
+                .show()
+            return
+        }
         val parts = ArrayList<String>()
         if (it.video != null) parts += "• Video trong máy"
         when (it.status) {
@@ -280,6 +335,18 @@ class SheetLogActivity : AppCompatActivity() {
             .setPositiveButton("XOÁ") { _, _ -> doDelete(it) }
             .setNegativeButton("HUỶ", null)
             .show()
+    }
+
+    /** Chỉ xoá video trong điện thoại (video đã có trên Drive). */
+    private fun deleteLocalOnly(it: Item) {
+        val v = it.video ?: return
+        try {
+            contentResolver.delete(v.uri, null, null)
+            toast("Đã xoá video khỏi máy — vẫn còn trên Google Drive")
+        } catch (e: Exception) {
+            toast("Không xoá được video: ${e.message}")
+        }
+        load()
     }
 
     private fun doDelete(it: Item) = lifecycleScope.launch {
