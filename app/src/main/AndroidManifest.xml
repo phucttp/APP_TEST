@@ -16,8 +16,9 @@
 
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="true"
-            android:screenOrientation="portrait"
+            android:screenOrientation="fullUser"
             android:theme="@style/AppTheme.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -29,7 +30,7 @@
             android:name=".SheetLogActivity"
             android:exported="false"
             android:label="Lịch sử quay"
-            android:screenOrientation="portrait"
+            android:screenOrientation="fullUser"
             android:windowSoftInputMode="adjustResize" />
     </application>
 </manifest>

@@ -98,6 +98,8 @@ class MainActivity : AppCompatActivity() {
     private var reading = false         // đang đọc mã
     private var countingDown = false
     private var lastSelection: RectF? = null
+    private var lastSelectionRotation = -1          // khung cũ chỉ dùng lại khi cùng chiều xoay
+    private var previewUseCase: Preview? = null
 
     /** Mã đã xác nhận cho lần quay này. */
     private var confirmedCode: String? = null
@@ -155,11 +157,54 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        prefs = getSharedPreferences(SheetLogger.PREFS, MODE_PRIVATE)
+        staff = Store.getString(this, Store.KEY_STAFF)
+        sheetTab = Store.getString(this, Store.KEY_SHEET_TAB, Store.DEFAULT_TAB)
+        machineType = Store.getString(this, Store.KEY_LAST_TYPE)
+
+        setupUi()
+
+        val need = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+        if (need.all { granted(it) }) startCamera() else permLauncher.launch(need)
+
+        lifecycleScope.launch { SheetLogger.flush(this@MainActivity) }
+    }
+
+    /**
+     * Xoay máy (dọc ↔ ngang): KHÔNG khởi động lại activity (configChanges trong manifest),
+     * chỉ dựng lại giao diện theo layout chiều mới (layout / layout-land) → camera, hộp thoại,
+     * bước đang làm dở đều giữ nguyên.
+     */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        setupUi()
+        // Gắn lại khung xem trước vào PreviewView mới + xoay theo màn hình
+        previewUseCase?.let {
+            it.setSurfaceProvider(b.preview.surfaceProvider)
+            it.targetRotation = displayRotation()
+        }
+        videoCapture?.let { if (recording == null) it.targetRotation = displayRotation() }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun displayRotation(): Int =
+        (if (Build.VERSION.SDK_INT >= 30) display?.rotation else windowManager.defaultDisplay.rotation)
+            ?: android.view.Surface.ROTATION_0
+
+    /** Khoá chiều màn hình hiện tại (lúc đếm ngược + quay) / mở lại xoay tự do. */
+    private fun lockOrientation(lock: Boolean) {
+        requestedOrientation = if (lock) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LOCKED
+            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+    }
+
+    /** Dựng giao diện màn chính (gọi lúc mở app và mỗi lần xoay máy). */
+    private fun setupUi() {
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
         // Tự chừa chỗ cho thanh trạng thái / thanh vuốt (ColorOS hay vẽ đè lên app)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
         ViewCompat.setOnApplyWindowInsetsListener(b.root) { v, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
@@ -169,11 +214,6 @@ class MainActivity : AppCompatActivity() {
             v.setPadding(bars.left, bars.top, bars.right, max(bars.bottom, minBottom))
             WindowInsetsCompat.CONSUMED
         }
-
-        prefs = getSharedPreferences(SheetLogger.PREFS, MODE_PRIVATE)
-        staff = Store.getString(this, Store.KEY_STAFF)
-        sheetTab = Store.getString(this, Store.KEY_SHEET_TAB, Store.DEFAULT_TAB)
-        machineType = Store.getString(this, Store.KEY_LAST_TYPE)
 
         b.btnStart.setOnClickListener { startSelecting() }
         b.selection.onSelected = { r -> if (selecting) onAreaChosen(r) }
@@ -193,14 +233,14 @@ class MainActivity : AppCompatActivity() {
         b.btnSheet.setOnClickListener { startActivity(Intent(this, SheetLogActivity::class.java)) }
         b.btnConfig.setOnClickListener { showConfigDialog() }
 
+        // Khung khoanh mã theo toạ độ màn hình cũ → bỏ khi dựng lại (vẫn nhớ lastSelection
+        // nhưng xoay rồi thì khung cũ không còn khớp → không cho "DÙNG KHUNG CŨ" sai chỗ)
+        if (lastSelectionRotation != displayRotation()) lastSelection = null
         b.selection.setSelectionRect(null)
+        b.tvCountdown.visibility = if (countingDown) View.VISIBLE else View.GONE
+        b.tvClock.text = clockFmt.format(Date())
         updateInfo()
         updateButtons()
-
-        val need = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
-        if (need.all { granted(it) }) startCamera() else permLauncher.launch(need)
-
-        lifecycleScope.launch { SheetLogger.flush(this@MainActivity) }
     }
 
     override fun onResume() {
@@ -244,6 +284,7 @@ class MainActivity : AppCompatActivity() {
     private fun onAreaChosen(r: RectF) {
         selecting = false
         lastSelection = RectF(r)
+        lastSelectionRotation = displayRotation()
         b.selection.setSelectionRect(r)
         updateButtons()
         focusThenRead()
@@ -536,6 +577,8 @@ class MainActivity : AppCompatActivity() {
     private fun startCountdown() {
         // Ẩn khung khoanh mã khi đếm ngược / quay (vẫn nhớ trong lastSelection cho "DÙNG KHUNG CŨ")
         b.selection.setSelectionRect(null)
+        // Khoá chiều màn hình từ lúc đếm ngược → video không đảo chiều giữa chừng
+        lockOrientation(true)
         countingDown = true
         countdownLeft = 3
         b.tvCountdown.visibility = View.VISIBLE
@@ -547,6 +590,7 @@ class MainActivity : AppCompatActivity() {
         countingDown = false
         clockHandler.removeCallbacks(countdownTick)
         b.tvCountdown.visibility = View.GONE
+        lockOrientation(false)
         backToIdle()
         toast("Đã huỷ")
     }
@@ -557,8 +601,9 @@ class MainActivity : AppCompatActivity() {
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             val provider = future.get()
-            val preview = Preview.Builder().build()
+            val preview = Preview.Builder().setTargetRotation(displayRotation()).build()
             preview.setSurfaceProvider(b.preview.surfaceProvider)
+            previewUseCase = preview
 
             // Máy yếu (RAM < 3.5GB) quay HD 720p cho mượt; máy khoẻ quay Full HD
             val mem = android.app.ActivityManager.MemoryInfo().also {
@@ -691,8 +736,10 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     private fun startRecording() {
-        val vc = videoCapture ?: run { toast("Camera chưa sẵn sàng"); backToIdle(); return }
-        val code = confirmedCode ?: run { toast("Chưa có mã"); backToIdle(); return }
+        val vc = videoCapture ?: run { toast("Camera chưa sẵn sàng"); lockOrientation(false); backToIdle(); return }
+        val code = confirmedCode ?: run { toast("Chưa có mã"); lockOrientation(false); backToIdle(); return }
+        // Video theo đúng chiều đang cầm máy (ngang → video ngang, dọc → video dọc)
+        vc.targetRotation = displayRotation()
 
         recStart = Date()
         val name = safeFileName(code) + "_" +
@@ -745,6 +792,7 @@ class MainActivity : AppCompatActivity() {
             is VideoRecordEvent.Resume -> { paused = false; updateButtons() }
             is VideoRecordEvent.Finalize -> {
                 stampActive = false
+                lockOrientation(false)
                 recording = null
                 paused = false
                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
