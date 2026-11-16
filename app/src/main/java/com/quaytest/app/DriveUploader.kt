@@ -37,17 +37,28 @@ class DriveUploader(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
         private const val K_SHEET = "sheet"
         private const val K_CODE = "code"
 
+        const val TAG_ALL = "drive"
+        const val TAG_FILE = "file:"
+
         fun workName(file: String) = "drive_$file"
 
-        /** Xếp hàng tải 1 video (gọi sau khi quay xong). */
-        fun enqueue(ctx: Context, uri: Uri, file: String, rowId: String, sheet: String, code: String) {
-            if (!Store.driveOn(ctx)) return
+        /**
+         * Xếp hàng tải 1 video.
+         * manual = false: tự tải sau khi quay (chỉ khi bật trong Cài đặt, theo tuỳ chọn Wi‑Fi).
+         * manual = true : người dùng bấm ĐỒNG BỘ DRIVE → tải ngay khi có mạng bất kỳ.
+         */
+        fun enqueue(ctx: Context, uri: Uri, file: String, rowId: String, sheet: String, code: String,
+                    manual: Boolean = false) {
+            if (!manual && !Store.driveOn(ctx)) return
+            val wifiOnly = !manual && Store.driveWifiOnly(ctx)
             val req = OneTimeWorkRequestBuilder<DriveUploader>()
                 .setInputData(workDataOf(K_URI to uri.toString(), K_NAME to file, K_ROW to rowId,
                     K_SHEET to sheet, K_CODE to code))
+                .addTag(TAG_ALL)
+                .addTag(TAG_FILE + file)
                 .setConstraints(
                     Constraints.Builder().setRequiredNetworkType(
-                        if (Store.driveWifiOnly(ctx)) NetworkType.UNMETERED else NetworkType.CONNECTED
+                        if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
                     ).build()
                 )
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
@@ -70,9 +81,12 @@ class DriveUploader(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
         val script = Store.getString(ctx, SheetLogger.KEY_URL).trim()
         if (!SheetLogger.isScriptUrl(script)) return@withContext Result.retry()
 
-        // Dòng nhật ký phải lên Sheet trước (để gắn link vào đúng dòng)
-        SheetLogger.flush(ctx)
-        if (SheetLogger.pendingRows(ctx).any { it.optString("id") == rowId }) return@withContext Result.retry()
+        // Dòng nhật ký phải lên Sheet trước (để gắn link vào đúng dòng).
+        // Video không có dòng nhật ký (rowId rỗng) → vẫn tải, chỉ không gắn link.
+        if (rowId.isNotEmpty()) {
+            SheetLogger.flush(ctx)
+            if (SheetLogger.pendingRows(ctx).any { it.optString("id") == rowId }) return@withContext Result.retry()
+        }
 
         // Video còn trong máy không (có thể đã bị xoá)
         val size = ctx.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
@@ -99,7 +113,7 @@ class DriveUploader(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
         Store.markUploaded(ctx, name, fileId)
 
         // 3) Gắn link video vào ô Mã máy trên Sheet (lỗi cũng không sao, video đã lên Drive)
-        SheetLogger.postAndRead(script, JSONObject()
+        if (rowId.isNotEmpty()) SheetLogger.postAndRead(script, JSONObject()
             .put("action", "uploadDone").put("sheet", sheet).put("id", rowId)
             .put("fileId", fileId).put("code", code))
         Result.success()

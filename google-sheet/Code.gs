@@ -233,6 +233,18 @@
   // Video lưu ở Drive của chủ script: "QuayTest Video/<tab>/<tên file>.mp4"
   const DRIVE_ROOT = 'QuayTest Video';
 
+  /**
+   * CHẠY TAY 1 LẦN trong trình sửa Apps Script (chọn hàm này → bấm ▶ Chạy) để Google
+   * hỏi cấp quyền Google Drive + gọi dịch vụ ngoài. Không cần chạy lại sau đó.
+   */
+  function capQuyenDrive() {
+    const root = folder_(null, DRIVE_ROOT);
+    UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/about?fields=user', {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true,
+    });
+    Logger.log('OK — đã có quyền Drive. Thư mục video: ' + root.getUrl());
+  }
+
   function folder_(parent, name) {
     const it = parent ? parent.getFoldersByName(name) : DriveApp.getFoldersByName(name);
     if (it.hasNext()) return it.next();

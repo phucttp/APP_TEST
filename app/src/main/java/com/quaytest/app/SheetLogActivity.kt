@@ -61,6 +61,11 @@ class SheetLogActivity : AppCompatActivity() {
     private var scriptVersion = 0
     private val dateFmt = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
 
+    // ===== Google Drive =====
+    private var uploadedFiles: Set<String> = emptySet()   // đã lên Drive
+    private var uploadingFiles: Set<String> = emptySet()  // đang chờ / đang tải
+    private var wasUploading = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivitySheetLogBinding.inflate(layoutInflater)
@@ -74,6 +79,59 @@ class SheetLogActivity : AppCompatActivity() {
         b.etSearch.setOnEditorActionListener { _, id, _ ->
             if (id == EditorInfo.IME_ACTION_SEARCH) { load(); true } else false
         }
+        b.btnSync.setOnClickListener { askSyncDrive() }
+        // Theo dõi các việc tải Drive đang chạy nền → cập nhật tiến độ + nhãn từng dòng
+        androidx.work.WorkManager.getInstance(this)
+            .getWorkInfosByTagLiveData(DriveUploader.TAG_ALL)
+            .observe(this) { infos -> onDriveWork(infos) }
+    }
+
+    private fun onDriveWork(infos: List<androidx.work.WorkInfo>) {
+        val active = infos.filter { !it.state.isFinished }
+        uploadingFiles = active.flatMap { w ->
+            w.tags.filter { it.startsWith(DriveUploader.TAG_FILE) }.map { it.removePrefix(DriveUploader.TAG_FILE) }
+        }.toSet()
+        val running = active.count { it.state == androidx.work.WorkInfo.State.RUNNING }
+        val failed = infos.count { it.state == androidx.work.WorkInfo.State.FAILED }
+        uploadedFiles = Store.uploadedFiles(this)
+        b.tvDrive.text = when {
+            active.isNotEmpty() ->
+                "☁ Đang tải lên Drive: còn ${active.size} video" + if (running == 0) " (chờ mạng…)" else ""
+            failed > 0 -> "⚠ $failed video tải lỗi — bấm ĐỒNG BỘ để thử lại"
+            else -> "☁ Đã lên Drive: ${uploadedFiles.size} video"
+        }
+        b.btnSync.isEnabled = active.isEmpty()
+        b.btnSync.alpha = if (b.btnSync.isEnabled) 1f else 0.4f
+        if (wasUploading && active.isEmpty()) load()   // vừa tải xong → làm mới danh sách
+        wasUploading = active.isNotEmpty()
+        adapter.notifyDataSetChanged()
+    }
+
+    /** Tải lên Drive mọi video trong máy chưa có trên Drive (theo danh sách đang xem). */
+    private fun askSyncDrive() {
+        val script = scriptUrl()
+        if (!SheetLogger.isScriptUrl(script)) { toast("Chưa có link Apps Script (⚙ CÀI ĐẶT)"); return }
+        val todo = adapter.items.filter {
+            it.video != null && it.file.isNotEmpty() && it.file !in uploadedFiles && it.file !in uploadingFiles
+        }
+        if (todo.isEmpty()) { toast("Không còn video nào cần tải lên Drive"); return }
+        val mb = todo.sumOf { it.video!!.size } / (1024.0 * 1024.0)
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val metered = cm.isActiveNetworkMetered
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Đồng bộ Google Drive")
+            .setMessage(String.format(Locale.US, "Tải %d video (~%.0f MB) lên Drive?", todo.size, mb) +
+                (if (metered) "\n\n⚠ Đang dùng 4G/dữ liệu di động — có thể tốn dung lượng." else "") +
+                "\n\nTải chạy nền, có thể thoát app; mất mạng sẽ tự thử lại.")
+            .setPositiveButton("TẢI LÊN") { _, _ ->
+                todo.forEach {
+                    DriveUploader.enqueue(this, it.video!!.uri, it.file,
+                        if (it.status == Status.VIDEO_ONLY) "" else it.id, tab, it.code, manual = true)
+                }
+                toast("Đã xếp ${todo.size} video vào hàng tải lên Drive")
+            }
+            .setNegativeButton("HUỶ", null)
+            .show()
     }
 
     override fun onResume() {
@@ -248,7 +306,9 @@ class SheetLogActivity : AppCompatActivity() {
             SheetLogger.removePending(this@SheetLogActivity, it.id)
             msgs += "dòng chờ gửi"
         }
-        // 3) Video trong máy
+        // 3) Đang chờ tải Drive → huỷ (video trên Drive nếu đã lên thì script đã bỏ vào thùng rác ở bước 1)
+        if (it.file.isNotEmpty()) DriveUploader.cancel(this@SheetLogActivity, it.file)
+        // 4) Video trong máy
         it.video?.let { v ->
             try {
                 contentResolver.delete(v.uri, null, null)
@@ -285,7 +345,14 @@ class SheetLogActivity : AppCompatActivity() {
                 it.type.takeIf { s -> s.isNotBlank() },
                 it.staff.takeIf { s -> s.isNotBlank() }?.let { s -> "NV: $s" }
             ).filterNotNull().filter { s -> s.isNotBlank() }.joinToString("  •  ")
+            val driveState = when {
+                it.file.isEmpty() -> null
+                it.file in uploadedFiles -> "☁ Đã lên Drive"
+                it.file in uploadingFiles -> "⏫ Đang tải Drive"
+                else -> null
+            }
             h.v.tvLine2.text = listOfNotNull(
+                driveState,
                 it.video?.let { v ->
                     val s = v.durationMs / 1000
                     String.format(Locale.US, "%02d:%02d", s / 60, s % 60) + "  " +
