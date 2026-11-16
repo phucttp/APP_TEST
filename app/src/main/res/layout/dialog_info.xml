@@ -100,7 +100,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:hint="Ngày tạo bảo hành">
+            android:hint="Bảo hành (mặc định 1 năm)">
             <com.google.android.material.textfield.MaterialAutoCompleteTextView
                 android:id="@+id/ddWarranty"
                 android:layout_width="match_parent"

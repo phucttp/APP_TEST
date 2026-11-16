@@ -106,12 +106,12 @@ class MainActivity : AppCompatActivity() {
     private var staff = ""
     private var sheetTab = Store.DEFAULT_TAB
     // Các cột theo sheet mẫu: Tên khách, Mã mạch, Loại máy, Ngày tạo bảo hành, Ghi chú
-    private var customer = ""        // giữ lại cho máy sau (thường test cả lô của 1 khách)
+    private var customer = ""        // nhập mới mỗi lần test (không nhớ)
     private var machineType = ""     // giữ lại cho máy sau
     private var board = ""           // xoá sau mỗi lần quay
     private var note = ""            // xoá sau mỗi lần quay
     private var warrantyDate = ""    // "" = không tạo bảo hành
-    private var warrantyToday = false // lần trước chọn "Hôm nay" → lần sau chọn sẵn
+    private var warrantyMonths = 12   // thời hạn BH lần quay này (chỉ in trên video)
 
     // Thông tin của video đang quay (ghi Sheet khi quay xong)
     private var recStart = Date()
@@ -337,6 +337,7 @@ class MainActivity : AppCompatActivity() {
         selecting = false
         reading = false
         confirmedCode = null
+        customer = ""
         board = ""
         note = ""
         b.selection.setSelectionRect(null)
@@ -472,12 +473,8 @@ class MainActivity : AppCompatActivity() {
 
         fun adapter(l: List<String>) = ArrayAdapter(this, android.R.layout.simple_list_item_1, l)
 
-        fun suggest(key: String) =
-            ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, Store.getList(this, key))
-
-        // Khách + loại máy giữ lại từ máy trước (test cả lô), có gợi ý các giá trị cũ
-        d.etCustomer.setText(customer)
-        d.etCustomer.setAdapter(suggest(Store.KEY_RECENT_CUSTOMERS))
+        // Tên khách: nhập mới mỗi lần test (không nhớ, không gợi ý tên cũ)
+        d.etCustomer.setText("")
         // Loại máy: chọn từ danh sách trong Cài đặt (giữ loại của máy trước nếu còn trong danh sách)
         val types = Store.typeList(this)
         d.ddType.setAdapter(adapter(types))
@@ -530,29 +527,13 @@ class MainActivity : AppCompatActivity() {
             d.ddSheet.setText(if (sheetTab in sheets) sheetTab else sheets.first(), false)
         }
 
-        // Ngày tạo bảo hành: Không / Hôm nay / Chọn ngày khác
-        val dateFmt = SimpleDateFormat("dd/MM/yyyy", Locale.US)
-        val today = dateFmt.format(Date())
-        var pickedWarranty = if (warrantyToday) today else ""
-        val optNone = "Không tạo bảo hành"
-        val optToday = "Hôm nay ($today)"
-        val optPick = "Chọn ngày khác…"
-        d.ddWarranty.setAdapter(adapter(listOf(optNone, optToday, optPick)))
-        d.ddWarranty.setText(if (pickedWarranty.isEmpty()) optNone else optToday, false)
-        d.ddWarranty.setOnItemClickListener { _, _, pos, _ ->
-            when (pos) {
-                0 -> pickedWarranty = ""
-                1 -> pickedWarranty = today
-                2 -> {
-                    val cal = Calendar.getInstance()
-                    android.app.DatePickerDialog(this, { _, y, m, day ->
-                        cal.set(y, m, day)
-                        pickedWarranty = dateFmt.format(cal.time)
-                        d.ddWarranty.setText(pickedWarranty, false)
-                    }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
-                }
-            }
-        }
+        // Bảo hành: chọn thời hạn, MẶC ĐỊNH 1 NĂM mỗi lần test.
+        // Sheet ghi "Ngày tạo bảo hành" = ngày test (nếu có BH); thời hạn chỉ in trên video.
+        val warrantyOpts = listOf(0 to "Không bảo hành", 6 to "6 tháng", 12 to "1 năm", 24 to "2 năm", 36 to "3 năm")
+        var pickedMonths = 12
+        d.ddWarranty.setAdapter(adapter(warrantyOpts.map { it.second }))
+        d.ddWarranty.setText("1 năm", false)
+        d.ddWarranty.setOnItemClickListener { _, _, pos, _ -> pickedMonths = warrantyOpts[pos].first }
 
         val dlg = MaterialAlertDialogBuilder(this)
             .setTitle("Thông tin test")
@@ -579,13 +560,13 @@ class MainActivity : AppCompatActivity() {
             note = clean(d.etNote.text.toString())
             staff = pickedStaff
             if (!autoMonth) sheetTab = d.ddSheet.text.toString().trim().ifEmpty { Store.DEFAULT_TAB }
-            warrantyDate = pickedWarranty
-            warrantyToday = pickedWarranty == today
-            // Nhớ làm mặc định / gợi ý cho lần sau
+            warrantyMonths = pickedMonths
+            // Có bảo hành → ngày tạo = ngày test (Sheet chỉ ghi ngày tạo)
+            warrantyDate = if (pickedMonths > 0) SimpleDateFormat("dd/MM/yyyy", Locale.US).format(Date()) else ""
+            // Nhớ loại máy + người test gần nhất cho lần sau (tên khách KHÔNG nhớ)
             Store.putString(this, Store.KEY_STAFF, staff)
             Store.putString(this, Store.KEY_SHEET_TAB, sheetTab)
             Store.putString(this, Store.KEY_LAST_TYPE, machineType)
-            Store.remember(this, Store.KEY_RECENT_CUSTOMERS, customer)
             Store.remember(this, Store.KEY_RECENT_TYPES, machineType)
             updateInfo()
             dlg.dismiss()
@@ -823,7 +804,10 @@ class MainActivity : AppCompatActivity() {
         stampCode = code
         stampStaff = staff
         stampCustomer = customer + if (machineType.isNotEmpty()) "  |  $machineType" else ""
-        stampWarranty = if (warrantyDate.isNotEmpty()) "BH tạo: $warrantyDate" else ""
+        stampWarranty = if (warrantyDate.isNotEmpty()) {
+            val dur = if (warrantyMonths % 12 == 0) "${warrantyMonths / 12} năm" else "$warrantyMonths tháng"
+            "BH: $dur (tạo $warrantyDate)"
+        } else "BH: không"
         stampActive = true
 
         var pending = vc.output.prepareRecording(this, opts)

@@ -12,7 +12,7 @@
   */
   const DEFAULT_TAB = 'Log';
   const TEMPLATE_TAB = 'Mẫu';
-  const SCRIPT_VERSION = 10; // ...8: tách ngày, 9: gộp ô tách ngày, 10: tự dọn dòng trống + ngày rỗng
+  const SCRIPT_VERSION = 11; // ...9: gộp ô tách ngày, 10: tự dọn ngày rỗng, 11: nhận dòng tách ngày theo "▼"
   const SEP_BG = '#d9ead3';     // nền dòng tách ngày (xanh nhạt)
   const SEP_FG = '#274e13';     // chữ dòng tách ngày (xanh đậm)
   const MD_SEP = 'qt_sep';      // đánh dấu ẩn: dòng này là dòng tách ngày, không phải lần quay
@@ -52,12 +52,22 @@
     return sh.getRange(1, 1, 1, lastCol).getValues()[0].map(norm_);
   }
 
-  /** Các dòng tách ngày của tab: {số dòng: true} */
+  /**
+   * Các dòng tách ngày của tab: {số dòng: true}.
+   * Nhận theo dấu ẩn (metadata) HOẶC theo nội dung ô đầu bắt đầu bằng "▼"
+   * (dòng bị kéo/dán tay có thể mất dấu ẩn).
+   */
   function sepRows_(sh) {
     const out = {};
     sh.createDeveloperMetadataFinder().withKey(MD_SEP).find().forEach(m => {
       try { out[m.getLocation().getRow().getRow()] = true; } catch (e) {}
     });
+    const last = sh.getLastRow();
+    if (last >= 2) {
+      sh.getRange(2, 1, last - 1, 1).getDisplayValues().forEach((v, k) => {
+        if (String(v[0]).trim().indexOf('▼') === 0) out[k + 2] = true;
+      });
+    }
     return out;
   }
 
