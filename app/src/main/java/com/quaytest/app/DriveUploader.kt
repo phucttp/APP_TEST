@@ -93,10 +93,17 @@ class DriveUploader(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
             ?.use { c -> if (c.moveToFirst()) c.getLong(0) else -1L } ?: -1L
         if (size <= 0) return@withContext Result.failure()
 
+        // Ngày/giờ quay lấy từ tên file MÃ_yyyyMMdd_HHmmss.mp4 → script xếp thư mục năm/tháng/ngày
+        val m = Regex("_(\\d{4})(\\d{2})(\\d{2})_(\\d{2})(\\d{2})\\d{2}\\.mp4$").find(name)
+        val shotDate = m?.let { "${it.groupValues[3]}/${it.groupValues[2]}/${it.groupValues[1]}" }.orEmpty()
+        val shotTime = m?.let { "${it.groupValues[4]}${it.groupValues[5]}" }.orEmpty()
+        val shotCode = code.ifEmpty { name.replace(Regex("_\\d{8}_\\d{6}\\.mp4$"), "") }
+
         // 1) Xin link tải lên 1 lần
         val init = SheetLogger.postAndRead(script, JSONObject()
             .put("action", "uploadInit").put("name", name).put("size", size)
-            .put("mime", "video/mp4").put("sheet", sheet))
+            .put("mime", "video/mp4").put("sheet", sheet)
+            .put("date", shotDate).put("time", shotTime).put("code", shotCode))
         val uploadUrl = init?.optString("uploadUrl").orEmpty()
         if (init == null || !init.optBoolean("ok") || uploadUrl.isEmpty()) {
             Log.w(TAG, "uploadInit lỗi: $init")

@@ -12,7 +12,7 @@
     */
     const DEFAULT_TAB = 'Log';
     const TEMPLATE_TAB = 'Mẫu';
-    const SCRIPT_VERSION = 14; // ...12: Drive, 13: tab tháng mới không mất dòng đầu, 14: xoá từ app không xoá video Drive
+    const SCRIPT_VERSION = 15; // ...13: tab tháng mới, 14: xoá app không xoá Drive, 15: Drive xếp năm/tháng/ngày + tên dd/MM/yy_MÃ
     const SEP_BG = '#d9ead3';     // nền dòng tách ngày (xanh nhạt)
     const SEP_FG = '#274e13';     // chữ dòng tách ngày (xanh đậm)
     const MD_SEP = 'qt_sep';      // đánh dấu ẩn: dòng này là dòng tách ngày, không phải lần quay
@@ -230,7 +230,7 @@
     }
 
     // ======================= GOOGLE DRIVE =======================
-  // Video lưu ở Drive của chủ script: "QuayTest Video/<tab>/<tên file>.mp4"
+  // Video lưu ở Drive của chủ script: "QuayTest Video/<năm>/Tháng MM/Ngày dd/dd/MM/yy_MÃ.mp4"
   const DRIVE_ROOT = 'QuayTest Video';
 
   /**
@@ -255,9 +255,36 @@
    * Tạo phiên tải lên (resumable upload) của Drive API bằng quyền của script.
    * App nhận "uploadUrl" rồi PUT video thẳng lên Drive (không đi qua script → không giới hạn dung lượng).
    */
+  /**
+   * Thư mục + tên file trên Drive theo NGÀY QUAY:
+   *   QuayTest Video/2026/Tháng 11/Ngày 16/16/11/26_VQR12345.mp4
+   * (Tháng/Ngày có số 0 phía trước để Drive xếp đúng thứ tự.)
+   * Trùng tên trong ngày (test lại cùng máy) → thêm giờ quay: 16/11/26_VQR12345_1430.mp4
+   */
+  function drivePlace_(d) {
+    const m = String(d.date || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    const now = new Date();
+    const dd = m ? ('0' + m[1]).slice(-2) : Utilities.formatDate(now, Session.getScriptTimeZone(), 'dd');
+    const MM = m ? ('0' + m[2]).slice(-2) : Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM');
+    const yyyy = m ? m[3] : Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy');
+    const dayFolder = folder_(folder_(folder_(folder_(null, DRIVE_ROOT), yyyy), 'Tháng ' + MM), 'Ngày ' + dd);
+
+    const code = String(d.code || '').trim() || String(d.name || 'video').replace(/\.mp4$/i, '');
+    const base = dd + '/' + MM + '/' + yyyy.slice(-2) + '_' + code;
+    const exists = n => dayFolder.getFilesByName(n).hasNext();
+    let name = base + '.mp4';
+    if (exists(name)) {
+      const hhmm = String(d.time || '').replace(/[^0-9]/g, '').slice(0, 4);
+      if (hhmm) name = base + '_' + hhmm + '.mp4';
+      for (let i = 2; exists(name); i++) name = base + (hhmm ? '_' + hhmm : '') + '_' + i + '.mp4';
+    }
+    return { folder: dayFolder, name: name };
+  }
+
   function driveUploadInit_(d) {
-    const tab = String(d.sheet || DEFAULT_TAB);
-    const folder = folder_(folder_(null, DRIVE_ROOT), tab);
+    const place = drivePlace_(d);
+    const folder = place.folder;
+    d.name = place.name;
     const res = UrlFetchApp.fetch(
       'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink', {
         method: 'post',
@@ -275,7 +302,7 @@
     if (res.getResponseCode() !== 200 || !url) {
       return { ok: false, error: 'Drive ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200) };
     }
-    return { ok: true, uploadUrl: url };
+    return { ok: true, uploadUrl: url, driveName: d.name };
   }
 
   /** Tải xong: gắn link video vào ô "Mã máy" của dòng có ID tương ứng. */
