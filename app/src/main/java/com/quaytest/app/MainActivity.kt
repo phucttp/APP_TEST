@@ -180,12 +180,37 @@ class MainActivity : AppCompatActivity() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         setupUi()
-        // Gắn lại khung xem trước vào PreviewView mới + xoay theo màn hình
-        previewUseCase?.let {
-            it.setSurfaceProvider(b.preview.surfaceProvider)
-            it.targetRotation = displayRotation()
+        if (recording == null && !countingDown && videoCapture != null) {
+            // Rảnh → dựng lại camera theo chiều mới: quay ngang ra video NGANG thật (không cắt khung dọc)
+            startCamera()
+        } else {
+            // Đang quay (chiều đã khoá) → chỉ gắn khung xem trước vào PreviewView mới
+            previewUseCase?.setSurfaceProvider(b.preview.surfaceProvider)
         }
-        videoCapture?.let { if (recording == null) it.targetRotation = displayRotation() }
+    }
+
+    // ================= ZOOM + LẤY NÉT =================
+
+    private var zoomRatio = 1f
+    private val ocrWarm = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private fun setZoom(ratio: Float) {
+        val cam = camera ?: return
+        val z = cam.cameraInfo.zoomState.value
+        val minZ = z?.minZoomRatio ?: 1f
+        val maxZ = z?.maxZoomRatio ?: 1f
+        zoomRatio = ratio.coerceIn(minZ, maxZ)
+        cam.cameraControl.setZoomRatio(zoomRatio)
+        b.tvZoom.text = String.format(Locale.US, "%.1fx", zoomRatio)
+    }
+
+    private fun focusAt(x: Float, y: Float) {
+        val cam = camera ?: return
+        val p = b.preview.meteringPointFactory.createPoint(x, y)
+        cam.cameraControl.startFocusAndMetering(
+            FocusMeteringAction.Builder(p, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+                .setAutoCancelDuration(4, TimeUnit.SECONDS).build()
+        )
     }
 
     @Suppress("DEPRECATION")
@@ -217,6 +242,10 @@ class MainActivity : AppCompatActivity() {
 
         b.btnStart.setOnClickListener { startSelecting() }
         b.selection.onSelected = { r -> if (selecting) onAreaChosen(r) }
+        b.selection.onZoom = { f -> setZoom(zoomRatio * f) }
+        b.selection.onTap = { x, y -> focusAt(x, y) }
+        b.tvZoom.text = String.format(Locale.US, "%.1fx", zoomRatio)
+        b.tvZoom.setOnClickListener { setZoom(1f) }
         b.btnReuse.setOnClickListener { lastSelection?.let { onAreaChosen(it) } }
         b.btnCancelSel.setOnClickListener { backToIdle() }
         // Không khoanh vùng → nhập mã thiết bị bằng tay
@@ -601,7 +630,16 @@ class MainActivity : AppCompatActivity() {
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             val provider = future.get()
-            val preview = Preview.Builder().setTargetRotation(displayRotation()).build()
+            val rotation = displayRotation()
+            // Khung xem trước 16:9 = đúng khung video → thấy gì quay nấy
+            val preview = Preview.Builder()
+                .setTargetRotation(rotation)
+                .setResolutionSelector(
+                    androidx.camera.core.resolutionselector.ResolutionSelector.Builder()
+                        .setAspectRatioStrategy(
+                            androidx.camera.core.resolutionselector.AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY
+                        ).build()
+                ).build()
             preview.setSurfaceProvider(b.preview.surfaceProvider)
             previewUseCase = preview
 
@@ -617,9 +655,13 @@ class MainActivity : AppCompatActivity() {
                         FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
                     )
                 ).build()
-            val vc = VideoCapture.withOutput(recorder)
+            // Video dựng theo chiều đang cầm máy lúc bind (xoay máy → bind lại, xem onConfigurationChanged)
+            val vc = VideoCapture.Builder(recorder).setTargetRotation(rotation).build()
 
             provider.unbindAll()
+            // Dọn bộ in chữ + luồng vẽ của lần bind trước
+            stampEffect?.close(); stampEffect = null
+            stampThread?.quitSafely(); stampThread = null
             camera = try {
                 // In chữ (mã, NV, KH, BH, ngày giờ) thẳng lên video
                 val effect = createStampEffect().also { stampEffect = it }
@@ -638,7 +680,9 @@ class MainActivity : AppCompatActivity() {
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, vc)
             }
             videoCapture = vc
-            warmUpOcr()
+            // Giữ mức zoom sau khi bind lại (xoay máy)
+            if (zoomRatio != 1f) setZoom(zoomRatio)
+            if (ocrWarm.compareAndSet(false, true)) warmUpOcr()
         }, ContextCompat.getMainExecutor(this))
     }
 

@@ -7,12 +7,16 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Lớp phủ lên camera: người dùng kéo tay để khoanh vùng có mã sản phẩm.
+ * Lớp phủ lên camera:
+ *  - Khi đang khoanh vùng (isEnabled = true): kéo 1 ngón để khoanh vùng có mã sản phẩm.
+ *  - Lúc nào cũng vậy: chụm / banh 2 ngón để ZOOM, chạm 1 ngón để LẤY NÉT (khi không khoanh).
  * Vùng ngoài khung bị làm tối, khung viền xanh lá (#00CC66 kiểu Titanium).
  */
 class SelectionOverlayView @JvmOverloads constructor(
@@ -31,10 +35,23 @@ class SelectionOverlayView @JvmOverloads constructor(
 
     /** Gọi khi người dùng nhấc tay sau khi kéo xong một khung hợp lệ. */
     var onSelected: ((RectF) -> Unit)? = null
+    /** Chụm/banh 2 ngón: hệ số zoom tương đối (>1 phóng to, <1 thu nhỏ). */
+    var onZoom: ((Float) -> Unit)? = null
+    /** Chạm 1 ngón (không kéo) khi không khoanh vùng → lấy nét tại điểm đó. */
+    var onTap: ((Float, Float) -> Unit)? = null
 
     private var startX = 0f
     private var startY = 0f
+    private var multiTouch = false          // gesture này đã có 2 ngón → không phải khoanh / chạm
     private val dp = resources.displayMetrics.density
+
+    private val scaleDetector = ScaleGestureDetector(context,
+        object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(d: ScaleGestureDetector): Boolean {
+                onZoom?.invoke(d.scaleFactor)
+                return true
+            }
+        })
 
     private val dimPaint = Paint().apply { color = Color.argb(140, 0, 0, 0) }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -50,24 +67,36 @@ class SelectionOverlayView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (!isEnabled) return false
+        scaleDetector.onTouchEvent(e)
+        val selecting = isEnabled
+
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                multiTouch = false
                 startX = e.x; startY = e.y
-                selection = RectF(startX, startY, startX, startY)
+                if (selecting) selection = RectF(startX, startY, startX, startY)
             }
-            MotionEvent.ACTION_MOVE -> selection = rectTo(e.x, e.y)
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // Ngón thứ 2 chạm → đây là zoom, huỷ khung đang kéo dở
+                multiTouch = true
+                if (selecting) selection = null
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (selecting && !multiTouch) selection = rectTo(e.x, e.y)
+            }
             MotionEvent.ACTION_UP -> {
-                val r = rectTo(e.x, e.y)
-                if (r.width() < 40 * dp || r.height() < 20 * dp) {
-                    // Chạm nhẹ / khung quá nhỏ → giữ khung cũ nếu có, bỏ khung lỗi
-                    selection = null
-                } else {
-                    selection = r
-                    onSelected?.invoke(r)
+                if (!multiTouch) {
+                    if (selecting) {
+                        val r = rectTo(e.x, e.y)
+                        if (r.width() < 40 * dp || r.height() < 20 * dp) selection = null
+                        else { selection = r; onSelected?.invoke(r) }
+                    } else if (abs(e.x - startX) < 20 * dp && abs(e.y - startY) < 20 * dp) {
+                        onTap?.invoke(e.x, e.y)
+                    }
                 }
                 performClick()
             }
+            MotionEvent.ACTION_CANCEL -> { if (selecting) selection = null }
         }
         invalidate()
         return true

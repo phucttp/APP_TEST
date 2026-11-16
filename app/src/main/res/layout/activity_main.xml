@@ -185,6 +185,12 @@
                 app:strokeWidth="1dp" />
         </LinearLayout>
 
+        <!-- Mức zoom (chụm/banh 2 ngón để zoom, chạm nhãn để về 1x) -->
+        <TextView
+            android:id="@+id/tvZoom"
+            style="@style/TcZoomPill"
+            android:text="1.0x" />
+
         <TextView
             android:id="@+id/tvCountdown"
             style="@style/TcData"
