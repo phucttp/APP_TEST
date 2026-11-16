@@ -53,6 +53,25 @@ class SelectionOverlayView @JvmOverloads constructor(
             }
         })
 
+    // ===== Vòng lấy nét (hiện tại chỗ chạm) =====
+    enum class FocusState { FOCUSING, OK, FAIL }
+    private var focusX = 0f
+    private var focusY = 0f
+    private var focusState: FocusState? = null
+    private val focusPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2.5f * dp
+    }
+    private val hideFocus = Runnable { focusState = null; invalidate() }
+
+    /** Hiện vòng lấy nét tại (x, y): trắng = đang lấy nét, xanh = đã nét, đỏ = không lấy nét được. */
+    fun showFocus(x: Float, y: Float, state: FocusState) {
+        focusX = x; focusY = y; focusState = state
+        removeCallbacks(hideFocus)
+        if (state != FocusState.FOCUSING) postDelayed(hideFocus, 1200)
+        invalidate()
+    }
+
     private val dimPaint = Paint().apply { color = Color.argb(140, 0, 0, 0) }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -111,6 +130,16 @@ class SelectionOverlayView @JvmOverloads constructor(
     }
 
     override fun onDraw(canvas: Canvas) {
+        focusState?.let { st ->
+            focusPaint.color = when (st) {
+                FocusState.FOCUSING -> Color.WHITE
+                FocusState.OK -> Color.parseColor("#00CC66")
+                FocusState.FAIL -> Color.parseColor("#FF3333")
+            }
+            val r = if (st == FocusState.FOCUSING) 40 * dp else 32 * dp
+            canvas.drawCircle(focusX, focusY, r, focusPaint)
+            canvas.drawCircle(focusX, focusY, 3 * dp, focusPaint)
+        }
         val s = selection ?: return
         val w = width.toFloat(); val h = height.toFloat()
         canvas.drawRect(0f, 0f, w, s.top, dimPaint)

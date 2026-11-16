@@ -204,13 +204,27 @@ class MainActivity : AppCompatActivity() {
         b.tvZoom.text = String.format(Locale.US, "%.1fx", zoomRatio)
     }
 
+    /** Chạm để lấy nét: GIỮ nét tại điểm chạm (không tự nhả sau vài giây) + hiện vòng báo kết quả. */
     private fun focusAt(x: Float, y: Float) {
         val cam = camera ?: return
         val p = b.preview.meteringPointFactory.createPoint(x, y)
-        cam.cameraControl.startFocusAndMetering(
-            FocusMeteringAction.Builder(p, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
-                .setAutoCancelDuration(4, TimeUnit.SECONDS).build()
-        )
+        val action = FocusMeteringAction.Builder(p, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+            .disableAutoCancel()
+            .build()
+        val overlay = b.selection
+        if (!cam.cameraInfo.isFocusMeteringSupported(action)) {
+            overlay.showFocus(x, y, SelectionOverlayView.FocusState.FAIL)
+            toast("Camera máy này không hỗ trợ chạm lấy nét")
+            return
+        }
+        overlay.showFocus(x, y, SelectionOverlayView.FocusState.FOCUSING)
+        val f = cam.cameraControl.startFocusAndMetering(action)
+        f.addListener({
+            val ok = try { f.get().isFocusSuccessful } catch (e: Exception) { false }
+            if (overlay.isAttachedToWindow) overlay.showFocus(
+                x, y, if (ok) SelectionOverlayView.FocusState.OK else SelectionOverlayView.FocusState.FAIL
+            )
+        }, ContextCompat.getMainExecutor(this))
     }
 
     @Suppress("DEPRECATION")
@@ -703,14 +717,15 @@ class MainActivity : AppCompatActivity() {
             CameraEffect.VIDEO_CAPTURE, 0, Handler(thread.looper)
         ) { t -> Log.e(TAG, "Overlay error", t) }
 
-        val bg = Paint().apply { color = Color.argb(170, 17, 17, 17) }
-        val accent = Paint().apply { color = Color.parseColor("#0055FF") }
+        // Kiểu "nhẹ": nền gần như trong suốt, chữ trắng có bóng mờ → đọc rõ trên nền sáng
+        // mà không thành một ô UI đè lên hình
+        val bg = Paint().apply { color = Color.argb(55, 0, 0, 0) }
         val big = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+            color = Color.argb(235, 255, 255, 255)
             typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         }
         val small = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+            color = Color.argb(220, 255, 255, 255)
             typeface = Typeface.MONOSPACE
         }
         val fmt = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
@@ -745,8 +760,11 @@ class MainActivity : AppCompatActivity() {
             }
 
             val base = min(uw, uh)
-            big.textSize = base / 16f
-            small.textSize = base / 26f
+            big.textSize = base / 20f
+            small.textSize = base / 30f
+            // Bóng mờ quanh chữ (thay cho khung nền đậm)
+            big.setShadowLayer(big.textSize * 0.18f, 0f, big.textSize * 0.06f, Color.argb(200, 0, 0, 0))
+            small.setShadowLayer(small.textSize * 0.2f, 0f, small.textSize * 0.06f, Color.argb(200, 0, 0, 0))
             val pad = small.textSize * 0.6f
             val lines = listOfNotNull(
                 "NV: $stampStaff",
@@ -755,20 +773,19 @@ class MainActivity : AppCompatActivity() {
                 cachedClock
             )
             val codeText = "MÃ: $stampCode"
-            val boxW = max(big.measureText(codeText), lines.maxOf { small.measureText(it) }) + pad * 3
+            val boxW = max(big.measureText(codeText), lines.maxOf { small.measureText(it) }) + pad * 2
             val lineH = small.textSize * 1.3f
-            val boxH = big.textSize * 1.3f + lineH * lines.size + pad * 1.5f
+            val boxH = big.textSize * 1.3f + lineH * lines.size + pad * 1.2f
             val x0 = pad
             val y0 = pad
-            c.drawRect(x0, y0, x0 + boxW, y0 + boxH, bg)
-            c.drawRect(x0, y0, x0 + pad * 0.5f, y0 + boxH, accent)
+            c.drawRoundRect(x0, y0, x0 + boxW, y0 + boxH, pad, pad, bg)
 
-            var y = y0 + pad * 0.5f + big.textSize
-            c.drawText(codeText, x0 + pad * 1.5f, y, big)
+            var y = y0 + pad * 0.4f + big.textSize
+            c.drawText(codeText, x0 + pad, y, big)
             y += big.textSize * 0.3f
             for (s in lines) {
                 y += lineH
-                c.drawText(s, x0 + pad * 1.5f, y, small)
+                c.drawText(s, x0 + pad, y, small)
             }
             c.restore()
             true
