@@ -12,6 +12,7 @@ object Store {
     const val KEY_SHEET_TAB = "sheet_tab"
     const val KEY_RECENT_TYPES = "recent_types"
     const val KEY_LAST_TYPE = "last_type"
+    const val KEY_LAST_CUSTOMER = "last_customer"
     const val DEFAULT_TAB = "Log"
     const val KEY_AUTO_MONTH = "auto_month_tab"
 
@@ -58,9 +59,93 @@ object Store {
         o.put(file, fileId)
         prefs(ctx).edit().putString(KEY_DRIVE_DONE, o.toString()).apply()
     }
+    @Synchronized fun uploadedId(ctx: Context, file: String): String =
+        jsonObj(ctx, KEY_DRIVE_DONE).optString(file)
+    /** Video không còn trên Drive → bỏ đánh dấu "đã lên Drive" để tải lại được. */
+    @Synchronized fun unmarkUploaded(ctx: Context, file: String) {
+        val o = jsonObj(ctx, KEY_DRIVE_DONE)
+        o.remove(file)
+        prefs(ctx).edit().putString(KEY_DRIVE_DONE, o.toString()).apply()
+    }
     @Synchronized fun uploadedFiles(ctx: Context): Set<String> {
         val o = try { org.json.JSONObject(prefs(ctx).getString(KEY_DRIVE_DONE, "{}")!!) } catch (e: Exception) { return emptySet() }
         return o.keys().asSequence().toSet()
+    }
+
+    // Hàng chờ tải Drive: [{uri, file, row, sheet, code, manual, wifi}] — lưu trong máy để
+    // tắt app / khởi động lại máy / rớt mạng vẫn còn, tải tiếp khi có mạng.
+    private const val KEY_DRIVE_QUEUE = "drive_queue"
+    // Link phiên tải lên (resumable) theo tên file → rớt mạng thì tải TIẾP từ chỗ dở, không tải lại từ đầu
+    private const val KEY_DRIVE_SESS = "drive_sessions"
+
+    private fun jsonObj(ctx: Context, key: String) =
+        try { org.json.JSONObject(prefs(ctx).getString(key, "{}")!!) } catch (e: Exception) { org.json.JSONObject() }
+
+    @Synchronized fun driveQueue(ctx: Context): List<org.json.JSONObject> {
+        val a = try { JSONArray(prefs(ctx).getString(KEY_DRIVE_QUEUE, "[]")) } catch (e: Exception) { JSONArray() }
+        return (0 until a.length()).map { a.getJSONObject(it) }
+    }
+    @Synchronized fun driveQueueAdd(ctx: Context, item: org.json.JSONObject): Boolean {
+        val file = item.optString("file")
+        val cur = driveQueue(ctx)
+        if (file.isEmpty() || file in uploadedFiles(ctx) || cur.any { it.optString("file") == file }) return false
+        prefs(ctx).edit().putString(KEY_DRIVE_QUEUE, JSONArray(cur + item).toString()).apply()
+        return true
+    }
+    @Synchronized fun driveQueueRemove(ctx: Context, file: String) {
+        val cur = driveQueue(ctx).filter { it.optString("file") != file }
+        prefs(ctx).edit().putString(KEY_DRIVE_QUEUE, JSONArray(cur).toString()).apply()
+        setDriveSession(ctx, file, null)
+    }
+    @Synchronized fun driveSession(ctx: Context, file: String): String? =
+        jsonObj(ctx, KEY_DRIVE_SESS).optString(file).ifEmpty { null }
+    @Synchronized fun setDriveSession(ctx: Context, file: String, url: String?) {
+        val o = jsonObj(ctx, KEY_DRIVE_SESS)
+        if (url == null) o.remove(file) else o.put(file, url)
+        prefs(ctx).edit().putString(KEY_DRIVE_SESS, o.toString()).apply()
+    }
+
+    // Video đã lên Drive nhưng chưa báo được script (chuyển thư mục + gắn link Sheet) → báo bù sau
+    private const val KEY_DRIVE_DONE_PENDING = "drive_done_pending"
+    @Synchronized fun driveDonePending(ctx: Context): List<org.json.JSONObject> {
+        val a = try { JSONArray(prefs(ctx).getString(KEY_DRIVE_DONE_PENDING, "[]")) } catch (e: Exception) { JSONArray() }
+        return (0 until a.length()).map { a.getJSONObject(it) }
+    }
+    @Synchronized fun driveDonePendingAdd(ctx: Context, o: org.json.JSONObject) {
+        val cur = driveDonePending(ctx).filter { it.optString("fileId") != o.optString("fileId") }
+        prefs(ctx).edit().putString(KEY_DRIVE_DONE_PENDING, JSONArray(cur + o).toString()).apply()
+    }
+    @Synchronized fun driveDonePendingRemove(ctx: Context, fileId: String) {
+        val cur = driveDonePending(ctx).filter { it.optString("fileId") != fileId }
+        prefs(ctx).edit().putString(KEY_DRIVE_DONE_PENDING, JSONArray(cur).toString()).apply()
+    }
+
+    // Thông tin dòng Sheet của từng video (lưu lúc quay) → Sheet thiếu dòng thì ghi lại được đầy đủ
+    private const val KEY_ROW_INFO = "row_info"
+    @Synchronized fun saveRowInfo(ctx: Context, file: String, row: org.json.JSONObject) {
+        val o = jsonObj(ctx, KEY_ROW_INFO)
+        o.put(file, row)
+        // Giữ tối đa 800 video gần nhất
+        val keys = o.keys().asSequence().toList()
+        if (keys.size > 800) keys.take(keys.size - 800).forEach { o.remove(it) }
+        prefs(ctx).edit().putString(KEY_ROW_INFO, o.toString()).apply()
+    }
+    /** Tên file mọi video máy này đã quay (có lưu thông tin lúc quay). */
+    @Synchronized fun rowInfoFiles(ctx: Context): Set<String> = jsonObj(ctx, KEY_ROW_INFO).keys().asSequence().toSet()
+    /** fileId Drive của mọi video máy này đã tải lên. */
+    @Synchronized fun uploadedIds(ctx: Context): Set<String> {
+        val o = jsonObj(ctx, KEY_DRIVE_DONE)
+        return o.keys().asSequence().map { o.optString(it) }.filter { it.isNotEmpty() }.toSet()
+    }
+    @Synchronized fun rowInfo(ctx: Context, file: String): org.json.JSONObject? =
+        jsonObj(ctx, KEY_ROW_INFO).optJSONObject(file)?.let { org.json.JSONObject(it.toString()) }
+
+    // Video đã gửi thông tin lên phần mô tả file Drive (khỏi gửi lại)
+    private const val KEY_DESC_DONE = "drive_desc_done"
+    @Synchronized fun descDone(ctx: Context): Set<String> = getList(ctx, KEY_DESC_DONE).toSet()
+    @Synchronized fun addDescDone(ctx: Context, files: Collection<String>) {
+        if (files.isEmpty()) return
+        setList(ctx, KEY_DESC_DONE, (getList(ctx, KEY_DESC_DONE) + files).distinct().takeLast(2000))
     }
 
     const val KEY_TYPE_LIST = "type_list"

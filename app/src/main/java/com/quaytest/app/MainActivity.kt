@@ -27,6 +27,7 @@ import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.doAfterTextChanged
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraEffect
@@ -51,7 +52,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -70,6 +70,9 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import android.hardware.camera2.CameraCharacteristics
 import kotlin.math.min
 
 /**
@@ -130,11 +133,6 @@ class MainActivity : AppCompatActivity() {
     /** Chỉ cho mở 1 hộp thoại một lúc — máy chậm, bấm 2 lần không bị chồng hộp. */
     private var activeDialog: AlertDialog? = null
     private fun dialogOpen() = activeDialog?.isShowing == true
-    private fun MaterialAlertDialogBuilder.showSingle(): AlertDialog = show().also { dlg ->
-        activeDialog = dlg
-        // Chạm ra ngoài ô nhập → bàn phím tự lui xuống
-        dlg.window?.decorView?.let { it.post { it.tapOutsideHidesKeyboard() } }
-    }
 
     private val clockHandler = Handler(Looper.getMainLooper())
     private val clockFmt = SimpleDateFormat("dd/MM/yyyy  HH:mm:ss", Locale.getDefault())
@@ -168,7 +166,7 @@ class MainActivity : AppCompatActivity() {
 
         // Camera + micro bắt buộc; thông báo (Android 13+) để nhắc đồng bộ 16:00 — từ chối vẫn dùng app được
         val need = listOfNotNull(
-            Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CAMERA,
             if (Build.VERSION.SDK_INT >= 33) Manifest.permission.POST_NOTIFICATIONS else null
         ).toTypedArray()
         if (need.all { granted(it) }) startCamera() else permLauncher.launch(need)
@@ -176,6 +174,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch { SheetLogger.flush(this@MainActivity) }
         // Nhắc đồng bộ Drive 16:00 + dọn video đã lên Drive quá 14 ngày
         Reminder.scheduleNext(this)
+        DriveUploader.kick(this)   // tải tiếp video còn trong hàng chờ Drive (nếu có)
         lifecycleScope.launch(Dispatchers.IO) {
             val n = Reminder.cleanupOld(this@MainActivity)
             if (n > 0) withContext(Dispatchers.Main) {
@@ -206,13 +205,78 @@ class MainActivity : AppCompatActivity() {
     private var zoomRatio = 1f
     private val ocrWarm = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    private fun setZoom(ratio: Float) {
+    // ===== Ống kính: chính (1x) / góc rộng (0.5x) =====
+    // zoomRatio = mức zoom HIỂN THỊ so với ống chính (0.5x = góc rộng, 2x = phóng to…)
+    private var wideSelector: CameraSelector? = null   // ống góc rộng riêng (nếu máy có)
+    private var wideFactor = 1f                        // 1x của ống góc rộng = bao nhiêu x so với ống chính
+    private var useWide = false                        // đang dùng ống góc rộng
+    private var mainMinZoom = 1f                       // ống chính zoom lùi được tới đâu (<1 = có sẵn góc rộng)
+    private var lensProbed = false
+    private var switchingLens = false
+
+    /** Có góc rộng (<1x) không: hoặc ống chính tự lùi được dưới 1x, hoặc có ống góc rộng riêng. */
+    private fun widestZoom(): Float = when {
+        mainMinZoom < 0.95f -> mainMinZoom
+        wideSelector != null -> wideFactor
+        else -> 1f
+    }
+
+    /**
+     * Tìm ống góc rộng phía sau: so "tiêu cự tương đương" (tiêu cự / đường chéo cảm biến)
+     * với ống chính — ống nào nhỏ hơn ~0.8 lần là góc rộng (vd 13mm so với 26mm → 0.5x).
+     */
+    @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
+    private fun probeLenses(provider: ProcessCameraProvider) {
+        if (lensProbed) return
+        lensProbed = true
+        try {
+            fun eq(info: androidx.camera.core.CameraInfo): Float? {
+                val c = Camera2CameraInfo.from(info)
+                val f = c.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.minOrNull() ?: return null
+                val s = c.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE) ?: return null
+                return f / kotlin.math.hypot(s.width, s.height)
+            }
+            val backs = provider.availableCameraInfos.filter { it.lensFacing == CameraSelector.LENS_FACING_BACK }
+            val main = CameraSelector.DEFAULT_BACK_CAMERA.filter(backs).firstOrNull() ?: return
+            val mainEq = eq(main) ?: return
+            val wide = backs.filter { it !== main }
+                .mapNotNull { i -> eq(i)?.let { i to it / mainEq } }
+                .filter { it.second in 0.3f..0.8f }
+                .minByOrNull { it.second } ?: return
+            wideSelector = wide.first.cameraSelector
+            wideFactor = wide.second
+            Log.i(TAG, "Ống góc rộng: ${"%.2f".format(wideFactor)}x")
+        } catch (e: Exception) {
+            Log.w(TAG, "Không dò được ống kính", e)
+        }
+    }
+
+    private fun setZoom(target: Float) {
         val cam = camera ?: return
+        if (switchingLens) return
+        val busy = recording != null || countingDown
+        // Qua mốc 1x → đổi ống kính (chỉ khi rảnh: đang quay thì không đổi camera được)
+        if (!busy && wideSelector != null && mainMinZoom >= 0.95f) {
+            val wantWide = target < 0.95f
+            if (wantWide != useWide) {
+                useWide = wantWide
+                zoomRatio = if (wantWide) maxOf(target, wideFactor) else maxOf(target, 1f)
+                switchingLens = true
+                startCamera()
+                return
+            }
+        }
+        val factor = if (useWide) wideFactor else 1f
         val z = cam.cameraInfo.zoomState.value
-        val minZ = z?.minZoomRatio ?: 1f
-        val maxZ = z?.maxZoomRatio ?: 1f
-        zoomRatio = ratio.coerceIn(minZ, maxZ)
-        cam.cameraControl.setZoomRatio(zoomRatio)
+        val r = (target / factor).coerceIn(z?.minZoomRatio ?: 1f, z?.maxZoomRatio ?: 1f)
+        cam.cameraControl.setZoomRatio(r)
+        zoomRatio = r * factor
+        showZoom()
+    }
+
+    private fun showZoom() {
+        if (!::b.isInitialized) return
+        // 1 nhãn duy nhất: zoom tới đâu hiện tới đó (0.6x … 1.0x … 8.0x)
         b.tvZoom.text = String.format(Locale.US, "%.1fx", zoomRatio)
     }
 
@@ -267,11 +331,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         b.btnStart.setOnClickListener { startSelecting() }
+        b.tvStartLabel.chamfer(0x99000000.toInt(), 6f)
         b.selection.onSelected = { r -> if (selecting) onAreaChosen(r) }
         b.selection.onZoom = { f -> setZoom(zoomRatio * f) }
         b.selection.onTap = { x, y -> focusAt(x, y) }
-        b.tvZoom.text = String.format(Locale.US, "%.1fx", zoomRatio)
-        b.tvZoom.setOnClickListener { setZoom(1f) }
+        // Chạm nhãn zoom: đang ≥1x → nhảy sang góc rộng (nếu máy có); còn lại → về 1x
+        b.tvZoom.setOnClickListener {
+            val wz = widestZoom()
+            val idle = recording == null && !countingDown
+            setZoom(if (zoomRatio >= 0.95f && zoomRatio < 1.05f && wz < 0.95f && (idle || mainMinZoom < 0.95f)) wz else 1f)
+        }
+        showZoom()
         b.btnReuse.setOnClickListener { lastSelection?.let { onAreaChosen(it) } }
         b.btnCancelSel.setOnClickListener { backToIdle() }
         // Không khoanh vùng → nhập mã thiết bị bằng tay
@@ -442,36 +512,43 @@ class MainActivity : AppCompatActivity() {
         others.forEach { c ->
             d.cgCandidates.addView(Chip(this).apply {
                 text = c
+                textSize = 15f
                 typeface = Typeface.MONOSPACE
                 setOnClickListener { d.etCode.setText(c); d.etCode.setSelection(c.length) }
             })
         }
 
-        val dlg = MaterialAlertDialogBuilder(this)
-            .setTitle(when {
+        d.etCode.doAfterTextChanged { d.tilCode.error = null }
+        val t = tcDialog(
+            title = when {
                 manual -> "Nhập mã thiết bị"
                 best.isEmpty() -> "Không đọc được mã"
                 else -> "Xác nhận mã thiết bị"
-            })
-            .setMessage(if (best.isEmpty() && !manual) "Nhập tay mã hoặc bấm KHOANH LẠI." else null)
-            .setView(d.root)
-            .setCancelable(false)
-            .setPositiveButton("XÁC NHẬN", null)          // gán listener sau để không tự đóng khi mã trống
-            .setNeutralButton("KHOANH LẠI") { _, _ -> b.root.post { startSelecting() } }
-            .setNegativeButton("HUỶ") { _, _ -> backToIdle() }
-            .showSingle()
+            },
+            subtitle = when {
+                manual -> "Gõ đúng mã in trên thiết bị"
+                best.isEmpty() -> "Nhập tay mã, hoặc bấm KHOANH LẠI để đọc lại"
+                else -> "Kiểm tra mã đọc được — sai thì sửa trực tiếp"
+            },
+            body = d.root, ok = "XÁC NHẬN", cancel = "HUỶ", extra = "KHOANH LẠI",
+            accentColor = if (best.isEmpty() && !manual) R.color.tc_amber else R.color.tc_blue,
+            cancelable = false,
+            onCancel = { backToIdle() },
+            onExtra = { b.root.post { startSelecting() } },
+        ) { t ->
+            val v = normalizeCode(d.etCode.text.toString())
+            if (v.isEmpty()) { d.tilCode.error = "Nhập mã thiết bị"; return@tcDialog }
+            confirmedCode = v
+            updateInfo()
+            t.dismiss()
+            b.root.post { showDetailsDialog() }
+        }
+        activeDialog = t.dialog
         if (best.isEmpty()) {
             // Phải gõ tay → bật sẵn bàn phím vào ô mã
             d.etCode.requestFocus()
-            dlg.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
-        }
-        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val v = normalizeCode(d.etCode.text.toString())
-            if (v.isEmpty()) { d.etCode.error = "Nhập mã"; return@setOnClickListener }
-            confirmedCode = v
-            updateInfo()
-            dlg.dismiss()
-            b.root.post { showDetailsDialog() }
+            t.dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
     }
 
@@ -481,12 +558,23 @@ class MainActivity : AppCompatActivity() {
         if (isFinishing || dialogOpen()) return
         val code = confirmedCode ?: return backToIdle()
         val d = DialogInfoBinding.inflate(layoutInflater)
+        d.codeBox.chamfer(getColor(R.color.tc_black), 10f)
         d.tvCode.text = code
 
         fun adapter(l: List<String>) = ArrayAdapter(this, android.R.layout.simple_list_item_1, l)
 
         // Tên khách: nhập mới mỗi lần test (không nhớ, không gợi ý tên cũ)
         d.etCustomer.setText("")
+        // Hiện tên khách lần trước — chạm để điền nhanh (vẫn gõ tên mới được)
+        val lastCustomer = Store.getString(this, Store.KEY_LAST_CUSTOMER)
+        if (lastCustomer.isNotBlank()) {
+            d.chipLastCustomer.text = "↺  Gần nhất: $lastCustomer"
+            d.chipLastCustomer.visibility = View.VISIBLE
+            d.chipLastCustomer.setOnClickListener {
+                d.etCustomer.setText(lastCustomer)
+                d.etCustomer.setSelection(lastCustomer.length)
+            }
+        }
         // Loại máy: chọn từ danh sách trong Cài đặt (giữ loại của máy trước nếu còn trong danh sách)
         val types = Store.typeList(this)
         d.ddType.setAdapter(adapter(types))
@@ -532,7 +620,7 @@ class MainActivity : AppCompatActivity() {
         val autoMonth = Store.autoMonth(this)
         if (autoMonth) {
             // Chế độ theo tháng: tab tự đặt = tháng_năm, không cho chọn
-            d.ddSheet.setText("${Store.monthTab()}  (tự động theo tháng)", false)
+            d.ddSheet.setText(Store.monthTab(), false)   // tự động theo tháng
             d.ddSheet.isEnabled = false
         } else {
             d.ddSheet.setAdapter(adapter(sheets))
@@ -547,16 +635,18 @@ class MainActivity : AppCompatActivity() {
         d.ddWarranty.setText("1 năm", false)
         d.ddWarranty.setOnItemClickListener { _, _, pos, _ -> pickedMonths = warrantyOpts[pos].first }
 
-        val dlg = MaterialAlertDialogBuilder(this)
-            .setTitle("Thông tin test")
-            .setView(d.root)
-            .setCancelable(false)
-            // Chữ ngắn để 3 nút nằm 1 hàng (dài quá Material xếp dọc → nút bị che)
-            .setPositiveButton("● QUAY", null)
-            .setNeutralButton("SỬA MÃ") { _, _ -> b.root.post { showCodeDialog(listOf(code)) } }
-            .setNegativeButton("HUỶ") { _, _ -> backToIdle() }
-            .showSingle()
-        dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+        // Sửa ô nào thì bỏ báo lỗi ô đó
+        d.etCustomer.doAfterTextChanged { d.tilCustomer.error = null }
+        d.ddType.doAfterTextChanged { d.tilType.error = null }
+        d.ddStaff.doAfterTextChanged { d.tilStaff.error = null }
+        tcDialog(
+            title = "Thông tin test",
+            subtitle = "Điền xong bấm ● QUAY để bắt đầu",
+            body = d.root, ok = "● QUAY", cancel = "HUỶ", extra = "SỬA MÃ",
+            okColor = R.color.tc_red, cancelable = false,
+            onCancel = { backToIdle() },
+            onExtra = { b.root.post { showCodeDialog(listOf(code)) } },
+        ) { t ->
             // 3 trường bắt buộc: Tên khách, Loại máy, Người test
             val pickedStaff = d.ddStaff.text.toString().trim()
             val pickedType = d.ddType.text.toString().trim()
@@ -564,7 +654,7 @@ class MainActivity : AppCompatActivity() {
             d.tilCustomer.error = if (typedCustomer.isEmpty()) "Nhập tên khách" else null
             d.tilType.error = if (pickedType.isEmpty()) "Chọn loại máy" else null
             d.tilStaff.error = if (pickedStaff.isEmpty()) "Chọn người test" else null
-            if (typedCustomer.isEmpty() || pickedType.isEmpty() || pickedStaff.isEmpty()) return@setOnClickListener
+            if (typedCustomer.isEmpty() || pickedType.isEmpty() || pickedStaff.isEmpty()) return@tcDialog
             val clean = { s: String -> s.trim().replace(Regex("\\s+"), " ") }
             customer = clean(d.etCustomer.text.toString())
             machineType = pickedType
@@ -579,11 +669,12 @@ class MainActivity : AppCompatActivity() {
             Store.putString(this, Store.KEY_STAFF, staff)
             Store.putString(this, Store.KEY_SHEET_TAB, sheetTab)
             Store.putString(this, Store.KEY_LAST_TYPE, machineType)
+            Store.putString(this, Store.KEY_LAST_CUSTOMER, customer)
             Store.remember(this, Store.KEY_RECENT_TYPES, machineType)
             updateInfo()
-            dlg.dismiss()
+            t.dismiss()
             startCountdown()
-        }
+        }.also { activeDialog = it.dialog }
     }
 
     // ================= BƯỚC 4: ĐẾM NGƯỢC → QUAY =================
@@ -637,6 +728,8 @@ class MainActivity : AppCompatActivity() {
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             val provider = future.get()
+            probeLenses(provider)
+            val selector = if (useWide) wideSelector ?: CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
             val rotation = displayRotation()
             // Khung xem trước 16:9 = đúng khung video → thấy gì quay nấy
             val preview = Preview.Builder()
@@ -677,18 +770,30 @@ class MainActivity : AppCompatActivity() {
                     .addUseCase(vc)
                     .addEffect(effect)
                     .build()
-                provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, group)
+                provider.bindToLifecycle(this, selector, group)
             } catch (e: Exception) {
                 // Máy không hỗ trợ effect → vẫn quay được, chỉ không có chữ trong hình
                 Log.e(TAG, "Overlay effect không chạy được", e)
                 toast("Máy không hỗ trợ in chữ lên video — vẫn quay bình thường")
                 stampEffect?.close(); stampEffect = null
                 provider.unbindAll()
-                provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, vc)
+                try {
+                    provider.bindToLifecycle(this, selector, preview, vc)
+                } catch (e2: Exception) {
+                    if (!useWide) throw e2
+                    // Ống góc rộng không mở được → bỏ, quay về ống chính
+                    Log.e(TAG, "Không mở được ống góc rộng", e2)
+                    wideSelector = null; useWide = false; switchingLens = false; zoomRatio = 1f
+                    toast("Máy không cho mở ống góc rộng — dùng ống chính")
+                    startCamera()
+                    return@addListener
+                }
             }
             videoCapture = vc
-            // Giữ mức zoom sau khi bind lại (xoay máy)
-            if (zoomRatio != 1f) setZoom(zoomRatio)
+            switchingLens = false
+            if (!useWide) mainMinZoom = camera?.cameraInfo?.zoomState?.value?.minZoomRatio ?: 1f
+            // Giữ mức zoom sau khi bind lại (xoay máy / đổi ống kính)
+            setZoom(zoomRatio)
             if (ocrWarm.compareAndSet(false, true)) warmUpOcr()
         }, ContextCompat.getMainExecutor(this))
     }
@@ -822,8 +927,8 @@ class MainActivity : AppCompatActivity() {
         } else "BH: không"
         stampActive = true
 
-        var pending = vc.output.prepareRecording(this, opts)
-        if (granted(Manifest.permission.RECORD_AUDIO)) pending = pending.withAudioEnabled()
+        val pending = vc.output.prepareRecording(this, opts)
+        // Video luôn TẮT TIẾNG (không ghi âm) — không cần quyền micro
 
         paused = false
         recording = pending.start(ContextCompat.getMainExecutor(this)) { onRecordEvent(it) }
@@ -881,6 +986,8 @@ class MainActivity : AppCompatActivity() {
             put("device", "${Build.MANUFACTURER} ${Build.MODEL}")
         }
         SheetLogger.enqueue(this, row)
+        // Lưu lại thông tin dòng theo tên file → video đã lên Drive mà Sheet mất dòng thì ghi lại được
+        Store.saveRowInfo(this, recFileName, row)
         // Tải video lên Google Drive (chạy nền, mặc định chỉ khi có Wi‑Fi)
         DriveUploader.enqueue(this, videoUri, recFileName, row.optString("id"), recTab, confirmedCode.orEmpty())
         lifecycleScope.launch {
@@ -895,11 +1002,11 @@ class MainActivity : AppCompatActivity() {
                 left > 0 -> toast("Chưa gửi được Sheet ($left dòng) — sẽ gửi lại sau")
             }
         }
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Đã lưu video")
-            .setMessage("$recFileName\n\nXem / xoá trong LỊCH SỬ QUAY.\nSản phẩm tiếp theo: bấm BẮT ĐẦU.")
-            .setPositiveButton("OK", null)
-            .show()
+        tcDialog(
+            title = "✔ Đã lưu video", subtitle = recFileName,
+            message = "Xem / xoá trong LỊCH SỬ QUAY.\nSản phẩm tiếp theo: bấm BẮT ĐẦU.",
+            ok = "OK", cancel = null, okColor = R.color.tc_green,
+        )
         backToIdle()
     }
 
@@ -913,6 +1020,7 @@ class MainActivity : AppCompatActivity() {
     private fun showListEditor(title: String, hint: String, items: MutableList<String>, onDone: () -> Unit) {
         val d = com.quaytest.app.databinding.DialogListEditBinding.inflate(layoutInflater)
         d.tilNew.hint = hint
+        d.listBox.chamfer(getColor(R.color.tc_bg), 8f, getColor(R.color.tc_border))
 
         class VH(val v: com.quaytest.app.databinding.ItemListRowBinding) :
             androidx.recyclerview.widget.RecyclerView.ViewHolder(v.root)
@@ -930,10 +1038,10 @@ class MainActivity : AppCompatActivity() {
                 val name = items[pos]
                 h.v.tvName.text = name
                 h.v.btnDel.setOnClickListener {
-                    MaterialAlertDialogBuilder(this@MainActivity)
-                        .setMessage("Xoá \"$name\" khỏi danh sách?")
-                        .setPositiveButton("XOÁ") { _, _ -> items.remove(name); refresh() }
-                        .setNegativeButton("HUỶ", null).show()
+                    tcDialog(
+                        title = "Xoá \"$name\"?", message = "Bỏ khỏi danh sách (nhớ bấm LƯU ở Cài đặt).",
+                        ok = "XOÁ", okColor = R.color.tc_red,
+                    ) { t -> items.remove(name); refresh(); t.dismiss() }
                 }
             }
         }
@@ -961,18 +1069,17 @@ class MainActivity : AppCompatActivity() {
         d.etNew.setOnEditorActionListener { _, _, _ -> add(); true }
         refresh()
 
-        MaterialAlertDialogBuilder(this)
-            .setTitle(title)
-            .setView(d.root)
-            .setPositiveButton("XONG") { _, _ ->
-                // Ô nhập còn chữ chưa bấm THÊM → vẫn thêm cho khỏi mất
-                val v = d.etNew.text.toString().trim()
-                if (v.isNotEmpty() && items.none { it.equals(v, true) }) items += v
-                onDone()
-            }
-            .setOnCancelListener { onDone() }
-            .show()
-            .also { dlg -> dlg.window?.decorView?.let { it.post { it.tapOutsideHidesKeyboard() } } }
+        tcDialog(
+            title = title, subtitle = "Thêm / xoá xong bấm XONG, rồi LƯU ở Cài đặt",
+            body = d.root, ok = "XONG", cancel = null,
+            onCancel = { onDone() },
+        ) { t ->
+            // Ô nhập còn chữ chưa bấm THÊM → vẫn thêm cho khỏi mất
+            val v = d.etNew.text.toString().trim()
+            if (v.isNotEmpty() && items.none { it.equals(v, true) }) items += v
+            t.dismiss()
+            onDone()
+        }
     }
 
     /** "Phúc, Tuấn, Tài" hoặc dòng nhắc khi trống. */
@@ -1066,10 +1173,10 @@ class MainActivity : AppCompatActivity() {
             catch (e: Exception) { toast("Không mở được link") }
         }
 
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Cài đặt")
-            .setView(d.root)
-            .setPositiveButton("LƯU") { _, _ ->
+        tcDialog(
+            title = "Cài đặt", subtitle = "Thay đổi chỉ được lưu khi bấm LƯU",
+            body = d.root, ok = "LƯU", cancel = "HUỶ",
+        ) { t ->
                 val (sheet, script) = readFields()
                 prefs.edit()
                     .putString(SheetLogger.KEY_SHEET_LINK, sheet.ifEmpty { SheetLogger.DEFAULT_SHEET_LINK })
@@ -1087,9 +1194,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 updateInfo()
                 lifecycleScope.launch { SheetLogger.flush(this@MainActivity) }
-            }
-            .setNegativeButton("HUỶ", null)
-            .showSingle()
+            t.dismiss()
+        }.also { activeDialog = it.dialog }
     }
 
     // ================= GIAO DIỆN =================
@@ -1110,6 +1216,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateButtons() {
+        showZoom()
         val rec = recording != null
         val idle = !rec && !countingDown && !reading && !selecting
 
@@ -1136,7 +1243,7 @@ class MainActivity : AppCompatActivity() {
         b.statusBar.setBackgroundColor(
             Color.parseColor(
                 when {
-                    rec && paused -> "#FBBF24"
+                    rec && paused -> "#FFAA00"
                     rec -> "#FF3333"
                     confirmedCode != null -> "#00CC66"
                     else -> "#0055FF"

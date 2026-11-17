@@ -26,6 +26,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:letterSpacing="0.12"
+                android:fontFamily="@font/jetbrains_mono_bold"
                 android:text="MÃ SẢN PHẨM"
                 android:textColor="@color/tc_text_muted"
                 android:textSize="11sp"
@@ -124,22 +125,40 @@
             android:textStyle="bold"
             android:visibility="gone" />
 
-        <!-- Nút BẮT ĐẦU to giữa màn hình -->
-        <com.google.android.material.button.MaterialButton
+        <!-- Nút BẮT ĐẦU kiểu nút quay của máy ảnh: dưới giữa khung camera, không che vật đang test -->
+        <LinearLayout
             android:id="@+id/btnStart"
-            android:layout_width="180dp"
-            android:layout_height="180dp"
-            android:layout_gravity="center"
-            android:backgroundTint="@color/tc_red"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:padding="0dp"
-            android:text="●\nBẮT ĐẦU"
-            android:textSize="22sp"
-            android:textStyle="bold"
-            app:cornerRadius="90dp"
-            app:strokeColor="#FFFFFF"
-            app:strokeWidth="4dp" />
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="20dp"
+            android:clickable="true"
+            android:contentDescription="Bắt đầu"
+            android:focusable="true"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <View
+                android:layout_width="88dp"
+                android:layout_height="88dp"
+                android:background="@drawable/bg_shutter"
+                android:duplicateParentState="true"
+                android:elevation="6dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:id="@+id/tvStartLabel"
+                android:fontFamily="@font/inter_black"
+                android:letterSpacing="0.1"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="3dp"
+                android:text="BẮT ĐẦU"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
 
         <!-- Nút phụ khi đang khoanh vùng -->
         <LinearLayout
@@ -190,6 +209,7 @@
             android:id="@+id/tvZoom"
             style="@style/TcZoomPill"
             android:text="1.0x" />
+
 
         <TextView
             android:id="@+id/tvCountdown"

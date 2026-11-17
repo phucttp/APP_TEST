@@ -1,21 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Bước 2: điền thông tin trước khi quay (khớp cột Google Sheet) -->
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Điền thông tin trước khi quay (khớp cột Google Sheet). Nằm trong khung dialog_frame (đã có cuộn). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content">
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
 
+    <!-- Mã máy: hộp đen nổi bật -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:id="@+id/codeBox"
         android:orientation="vertical"
-        android:paddingHorizontal="24dp"
-        android:paddingTop="4dp">
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="10dp">
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:letterSpacing="0.1"
+            android:letterSpacing="0.12"
             android:text="MÃ MÁY"
             android:textColor="@color/tc_text_muted"
             android:textSize="11sp"
@@ -26,81 +29,113 @@
             style="@style/TcData"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:textColor="@color/tc_text"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/tc_green"
             android:textSize="22sp"
             android:textStyle="bold" />
+    </LinearLayout>
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/tilCustomer"
+    <TextView
+        style="@style/TcSection"
+        android:layout_marginTop="16dp"
+        android:layout_marginBottom="0dp"
+        android:text="KHÁCH HÀNG &amp; THIẾT BỊ" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilCustomer"
+        style="@style/TcField"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Tên khách *">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etCustomer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Tên khách *">
-            <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                android:id="@+id/etCustomer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:completionThreshold="1"
-                android:imeOptions="actionNext"
-                android:inputType="textCapWords"
-                android:maxLines="1"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="16dp" />
-        </com.google.android.material.textfield.TextInputLayout>
+            android:imeOptions="actionNext"
+            android:inputType="textCapWords"
+            android:maxLines="1" />
+    </com.google.android.material.textfield.TextInputLayout>
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/tilType"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+    <!-- Tên khách lần trước: chạm để điền nhanh -->
+    <com.google.android.material.chip.Chip
+        android:id="@+id/chipLastCustomer"
+        style="@style/Widget.Material3.Chip.Suggestion"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textColor="@color/tc_blue"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilType"
+        style="@style/TcField.Dropdown"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Loại máy *">
+
+        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+            android:id="@+id/ddType"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="Loại máy *">
-            <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                android:id="@+id/ddType"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="none" />
-        </com.google.android.material.textfield.TextInputLayout>
+            android:inputType="none" />
+    </com.google.android.material.textfield.TextInputLayout>
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/tilBoard"
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilBoard"
+        style="@style/TcField"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Mã mạch (bấm ▣ để quét)"
+        app:endIconContentDescription="Quét mã mạch"
+        app:endIconDrawable="@drawable/ic_scan"
+        app:endIconMode="custom"
+        app:endIconTint="@null">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etBoard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="Mã mạch (bấm 📷 để quét)"
-            app:endIconContentDescription="Quét mã mạch"
-            app:endIconDrawable="@drawable/ic_scan"
-            app:endIconMode="custom"
-            app:endIconTint="@null">
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etBoard"
-                style="@style/TcData"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:imeOptions="actionNext"
-                android:maxLines="1" />
-        </com.google.android.material.textfield.TextInputLayout>
+            android:imeOptions="actionNext"
+            android:maxLines="1" />
+    </com.google.android.material.textfield.TextInputLayout>
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/tilStaff"
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+    <TextView
+        style="@style/TcSection"
+        android:layout_marginTop="18dp"
+        android:layout_marginBottom="0dp"
+        android:text="NGƯỜI TEST &amp; BẢO HÀNH" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilStaff"
+        style="@style/TcField.Dropdown"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Người test *">
+
+        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+            android:id="@+id/ddStaff"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="Người test *">
-            <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                android:id="@+id/ddStaff"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="none" />
-        </com.google.android.material.textfield.TextInputLayout>
+            android:inputType="none" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:baselineAligned="false"
+        android:orientation="horizontal">
 
         <com.google.android.material.textfield.TextInputLayout
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
-            android:layout_width="match_parent"
+            style="@style/TcField.Dropdown"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="Bảo hành (mặc định 1 năm)">
+            android:layout_marginEnd="6dp"
+            android:layout_weight="1"
+            android:hint="Bảo hành">
+
             <com.google.android.material.textfield.MaterialAutoCompleteTextView
                 android:id="@+id/ddWarranty"
                 android:layout_width="match_parent"
@@ -109,29 +144,32 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
-            android:layout_width="match_parent"
+            style="@style/TcField.Dropdown"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="Ghi vào sheet">
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:hint="Sheet">
+
             <com.google.android.material.textfield.MaterialAutoCompleteTextView
                 android:id="@+id/ddSheet"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="none" />
         </com.google.android.material.textfield.TextInputLayout>
+    </LinearLayout>
 
-        <com.google.android.material.textfield.TextInputLayout
+    <com.google.android.material.textfield.TextInputLayout
+        style="@style/TcField"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Ghi chú (không bắt buộc)">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etNote"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="Ghi chú">
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etNote"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textCapSentences|textMultiLine"
-                android:maxLines="3" />
-        </com.google.android.material.textfield.TextInputLayout>
-    </LinearLayout>
-</ScrollView>
+            android:inputType="textCapSentences|textMultiLine"
+            android:maxLines="3" />
+    </com.google.android.material.textfield.TextInputLayout>
+</LinearLayout>

@@ -1,5 +1,10 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Theme sáng kiểu "Titanium": nền xám nhạt, chữ đen, nhấn xanh #0055FF, góc vuông vức -->
+    <!--
+      Design system "Titanium Command" (The Clean Lab):
+      - KHÔNG bo tròn → góc VÁT (chamfer): sm 8dp, md 12dp
+      - Inter: tiêu đề + chữ thường; JetBrains Mono: mã, giờ, số liệu, nhãn kỹ thuật
+      - Nhấn xanh #0055FF, cam #FF4800, nền #F0F2F5, đen #111111
+    -->
     <style name="AppTheme" parent="Theme.Material3.Light">
         <!-- Android 15+ ép vẽ tràn viền → thanh tiêu đề đè nội dung. Tắt cho các màn có action bar
              (màn chính tự xử lý insets riêng trong MainActivity). -->
@@ -10,6 +15,7 @@
         <item name="colorOnSecondary">#FFFFFF</item>
         <item name="colorSecondaryContainer">@color/tc_dark_gray</item>
         <item name="colorOnSecondaryContainer">#FFFFFF</item>
+        <item name="colorTertiary">@color/tc_orange</item>
         <item name="colorError">@color/tc_red</item>
         <item name="colorPrimaryContainer">#E6EEFF</item>
         <item name="colorSurface">@color/tc_card</item>
@@ -22,17 +28,89 @@
         <item name="android:colorBackground">@color/tc_bg</item>
         <item name="android:statusBarColor">@color/tc_black</item>
         <item name="colorPrimaryDark">@color/tc_black</item>
+
+        <!-- Phông chữ toàn app -->
+        <!-- Chỉ android:fontFamily ở mức theme (đặt cả "fontFamily" của AppCompat sẽ lấn phông riêng từng chỗ) -->
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="textAppearanceHeadlineLarge">@style/TcText.HeadlineLarge</item>
+        <item name="textAppearanceHeadlineMedium">@style/TcText.HeadlineMedium</item>
+        <item name="textAppearanceHeadlineSmall">@style/TcText.HeadlineSmall</item>
+        <item name="textAppearanceTitleLarge">@style/TcText.TitleLarge</item>
+        <item name="textAppearanceTitleMedium">@style/TcText.TitleMedium</item>
+        <item name="textAppearanceTitleSmall">@style/TcText.TitleSmall</item>
+        <item name="textAppearanceBodyLarge">@style/TcText.BodyLarge</item>
+        <item name="textAppearanceBodyMedium">@style/TcText.BodyMedium</item>
+        <item name="textAppearanceBodySmall">@style/TcText.BodySmall</item>
+        <item name="textAppearanceLabelLarge">@style/TcText.LabelLarge</item>
+        <item name="textAppearanceLabelMedium">@style/TcText.LabelMedium</item>
+        <item name="textAppearanceLabelSmall">@style/TcText.LabelSmall</item>
+
+        <!-- Góc VÁT cho mọi thành phần (nút, ô nhập, thẻ, chip, menu) -->
         <item name="shapeAppearanceSmallComponent">@style/TcShape</item>
         <item name="shapeAppearanceMediumComponent">@style/TcShape</item>
+        <item name="shapeAppearanceLargeComponent">@style/TcShapeLg</item>
+        <item name="shapeAppearanceCornerExtraSmall">@style/TcShapeXs</item>
         <item name="shapeAppearanceCornerSmall">@style/TcShape</item>
         <item name="shapeAppearanceCornerMedium">@style/TcShape</item>
         <item name="shapeAppearanceCornerLarge">@style/TcShapeLg</item>
         <item name="shapeAppearanceCornerExtraLarge">@style/TcShapeLg</item>
+
         <item name="actionBarTheme">@style/TcActionBar</item>
         <item name="actionBarStyle">@style/TcActionBarStyle</item>
         <item name="materialButtonStyle">@style/TcButton</item>
         <item name="materialAlertDialogTheme">@style/TcDialog</item>
         <item name="elevationOverlayEnabled">false</item>
+    </style>
+
+    <!-- ===== Kiểu chữ (Inter) cho các thành phần Material ===== -->
+    <style name="TcText.HeadlineLarge" parent="TextAppearance.Material3.HeadlineLarge">
+        <item name="android:fontFamily">@font/inter_black</item>
+        <item name="fontFamily">@font/inter_black</item>
+    </style>
+    <style name="TcText.HeadlineMedium" parent="TextAppearance.Material3.HeadlineMedium">
+        <item name="android:fontFamily">@font/inter_black</item>
+        <item name="fontFamily">@font/inter_black</item>
+    </style>
+    <style name="TcText.HeadlineSmall" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="fontFamily">@font/inter_bold</item>
+    </style>
+    <style name="TcText.TitleLarge" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="fontFamily">@font/inter_bold</item>
+    </style>
+    <style name="TcText.TitleMedium" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="fontFamily">@font/inter_semibold</item>
+    </style>
+    <style name="TcText.TitleSmall" parent="TextAppearance.Material3.TitleSmall">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="fontFamily">@font/inter_semibold</item>
+    </style>
+    <style name="TcText.BodyLarge" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/inter</item>
+    </style>
+    <style name="TcText.BodyMedium" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/inter</item>
+    </style>
+    <style name="TcText.BodySmall" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="fontFamily">@font/inter</item>
+    </style>
+    <style name="TcText.LabelLarge" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="fontFamily">@font/inter_bold</item>
+        <item name="android:letterSpacing">0.06</item>
+    </style>
+    <style name="TcText.LabelMedium" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="fontFamily">@font/inter_semibold</item>
+    </style>
+    <style name="TcText.LabelSmall" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:fontFamily">@font/inter_semibold</item>
+        <item name="fontFamily">@font/inter_semibold</item>
     </style>
 
     <!-- Hộp thoại trắng tinh, không ánh xanh do elevation overlay -->
@@ -53,6 +131,7 @@
         <item name="colorSurface">@color/tc_black</item>
         <item name="colorOnSurface">#FFFFFF</item>
         <item name="background">@color/tc_black</item>
+        <item name="android:fontFamily">@font/inter</item>
     </style>
 
     <style name="TcActionBarStyle" parent="Widget.Material3.ActionBar.Solid">
@@ -60,27 +139,38 @@
         <item name="titleTextStyle">@style/TcActionBarTitle</item>
         <item name="subtitleTextStyle">@style/TcActionBarSubtitle</item>
     </style>
+    <!-- Tiêu đề màn: Inter Black, VIẾT HOA, giãn chữ -->
     <style name="TcActionBarTitle" parent="TextAppearance.Material3.ActionBar.Title">
         <item name="android:textColor">#FFFFFF</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">@font/inter_black</item>
+        <item name="fontFamily">@font/inter_black</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.04</item>
     </style>
     <style name="TcActionBarSubtitle" parent="TextAppearance.Material3.ActionBar.Subtitle">
         <item name="android:textColor">@color/tc_text_muted</item>
+        <item name="android:fontFamily">@font/jetbrains_mono</item>
     </style>
 
-    <style name="TcShape">
-        <item name="cornerFamily">rounded</item>
+    <!-- Góc VÁT (chamfer): xs 6dp (ô nhập), sm 8dp (nút, thẻ), lg 12dp -->
+    <style name="TcShapeXs">
+        <item name="cornerFamily">cut</item>
         <item name="cornerSize">6dp</item>
     </style>
+    <style name="TcShape">
+        <item name="cornerFamily">cut</item>
+        <item name="cornerSize">8dp</item>
+    </style>
     <style name="TcShapeLg">
-        <item name="cornerFamily">rounded</item>
+        <item name="cornerFamily">cut</item>
         <item name="cornerSize">12dp</item>
     </style>
 
     <style name="TcButton" parent="Widget.Material3.Button">
         <item name="shapeAppearance">@style/TcShape</item>
-        <item name="android:textStyle">bold</item>
-        <item name="android:letterSpacing">0.04</item>
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:letterSpacing">0.06</item>
         <item name="android:paddingLeft">6dp</item>
         <item name="android:paddingRight">6dp</item>
         <item name="android:maxLines">2</item>
@@ -89,22 +179,26 @@
     </style>
     <style name="TcButton.Outline" parent="Widget.Material3.Button.OutlinedButton">
         <item name="shapeAppearance">@style/TcShape</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="android:textStyle">normal</item>
+        <item name="android:letterSpacing">0.06</item>
         <item name="android:textColor">#FFFFFF</item>
         <item name="strokeColor">#66FFFFFF</item>
+        <item name="strokeWidth">2dp</item>
         <item name="android:insetTop">0dp</item>
         <item name="android:insetBottom">0dp</item>
     </style>
 
-    <!-- ===== Kiểu dùng trong hộp Cài đặt ===== -->
+    <!-- ===== Nhãn kỹ thuật (JetBrains Mono, VIẾT HOA, giãn chữ) — "tech-label" ===== -->
     <style name="TcSection">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginBottom">4dp</item>
-        <item name="android:letterSpacing">0.1</item>
+        <item name="android:fontFamily">@font/jetbrains_mono_bold</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textAllCaps">true</item>
         <item name="android:textColor">@color/tc_text_muted</item>
         <item name="android:textSize">11sp</item>
-        <item name="android:textStyle">bold</item>
     </style>
     <style name="TcSettingRow">
         <item name="android:layout_width">match_parent</item>
@@ -120,7 +214,7 @@
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/tc_text</item>
         <item name="android:textSize">15sp</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">@font/inter_bold</item>
     </style>
     <style name="TcRowSummary">
         <item name="android:layout_width">match_parent</item>
@@ -135,9 +229,11 @@
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">44dp</item>
         <item name="android:layout_marginStart">10dp</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="android:letterSpacing">0.06</item>
         <item name="android:textColor">@color/tc_blue</item>
         <item name="strokeColor">@color/tc_blue</item>
+        <item name="strokeWidth">2dp</item>
         <item name="shapeAppearance">@style/TcShape</item>
         <item name="android:insetTop">0dp</item>
         <item name="android:insetBottom">0dp</item>
@@ -150,10 +246,9 @@
         <item name="android:background">@color/tc_overlay</item>
         <item name="android:paddingHorizontal">12dp</item>
         <item name="android:paddingVertical">6dp</item>
-        <item name="android:fontFamily">monospace</item>
+        <item name="android:fontFamily">@font/jetbrains_mono_bold</item>
         <item name="android:textColor">#FFFFFF</item>
         <item name="android:textSize">14sp</item>
-        <item name="android:textStyle">bold</item>
     </style>
     <style name="TcDivider">
         <item name="android:layout_width">match_parent</item>
@@ -161,8 +256,53 @@
         <item name="android:background">@color/tc_border</item>
     </style>
 
-    <!-- Chữ số liệu: font mono như trang web (JetBrains Mono → monospace hệ thống) -->
+    <!-- Nút trong hàng nút đáy hộp thoại (khung dialog_frame) -->
+    <style name="TcDialogButton" parent="Widget.Material3.Button">
+        <item name="autoSizeTextType">uniform</item>
+        <item name="autoSizeMinTextSize">10sp</item>
+        <item name="autoSizeMaxTextSize">14sp</item>
+        <item name="shapeAppearance">@style/TcShape</item>
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="android:letterSpacing">0.06</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:paddingLeft">4dp</item>
+        <item name="android:paddingRight">4dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+    <style name="TcDialogButton.Outline" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="autoSizeTextType">uniform</item>
+        <item name="autoSizeMinTextSize">10sp</item>
+        <item name="autoSizeMaxTextSize">14sp</item>
+        <item name="shapeAppearance">@style/TcShape</item>
+        <item name="android:fontFamily">@font/inter_bold</item>
+        <item name="android:letterSpacing">0.06</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/tc_text</item>
+        <item name="strokeColor">@color/tc_border_strong</item>
+        <item name="strokeWidth">2dp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:paddingLeft">4dp</item>
+        <item name="android:paddingRight">4dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+    <!-- Ô nhập trong hộp thoại: gọn (Dense) để không phải cuộn nhiều -->
+    <style name="TcField" parent="Widget.Material3.TextInputLayout.OutlinedBox.Dense">
+        <item name="android:layout_marginTop">10dp</item>
+        <item name="shapeAppearance">@style/TcShapeXs</item>
+    </style>
+    <style name="TcField.Dropdown" parent="Widget.Material3.TextInputLayout.OutlinedBox.Dense.ExposedDropdownMenu">
+        <item name="android:layout_marginTop">10dp</item>
+        <item name="shapeAppearance">@style/TcShapeXs</item>
+    </style>
+
+    <!-- Chữ số liệu (mã máy, giờ, dung lượng): JetBrains Mono -->
     <style name="TcData">
-        <item name="android:fontFamily">monospace</item>
+        <item name="android:fontFamily">@font/jetbrains_mono</item>
     </style>
 </resources>

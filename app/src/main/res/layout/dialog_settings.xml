@@ -1,15 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Cài đặt: mỗi danh sách 1 dòng tóm tắt + nút SỬA (mở màn quản lý riêng) → hộp luôn gọn -->
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content">
-
-    <LinearLayout
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="24dp"
-        android:paddingTop="4dp">
+        android:orientation="vertical">
 
         <!-- ===== DANH SÁCH ===== -->
         <TextView
@@ -125,7 +119,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="Video lưu ở Drive của tài khoản chủ Sheet, thư mục 'QuayTest Video/tháng'. Ô Mã máy trên Sheet sẽ có link mở video."
+            android:text="Video lưu ở Drive của tài khoản chủ Sheet, thư mục QuayTest Video / năm / tháng / ngày. Ô Mã máy trên Sheet có link mở video."
             android:textColor="@color/tc_text_2"
             android:textSize="12sp" />
 
@@ -136,6 +130,7 @@
             android:text="KẾT NỐI GOOGLE SHEET" />
 
         <com.google.android.material.textfield.TextInputLayout
+            style="@style/TcField"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
@@ -150,6 +145,7 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+            style="@style/TcField"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -200,4 +196,3 @@
             android:textColor="@color/tc_text_2"
             android:textSize="12sp" />
     </LinearLayout>
-</ScrollView>

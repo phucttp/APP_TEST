@@ -1,39 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Bước 1: xác nhận MÃ (chỉ mã + vài gợi ý ngắn để chạm chọn) -->
+<!-- Xác nhận / nhập MÃ THIẾT BỊ: ô mã to, rõ + vài gợi ý ngắn để chạm chọn -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:paddingHorizontal="24dp"
-    android:paddingTop="4dp">
+    android:orientation="vertical">
 
     <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilCode"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Mã thiết bị">
+        android:hint="Mã thiết bị"
+        app:boxStrokeWidth="2dp"
+        app:endIconMode="clear_text">
+
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etCode"
             style="@style/TcData"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:letterSpacing="0.04"
             android:maxLength="40"
             android:maxLines="1"
-            android:textSize="22sp"
+            android:paddingVertical="18dp"
+            android:textSize="24sp"
             android:textStyle="bold" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <TextView
         android:id="@+id/tvCandidates"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:text="Hoặc chạm để chọn:"
-        android:textColor="@color/tc_text_2"
-        android:textSize="13sp" />
+        style="@style/TcSection"
+        android:layout_marginTop="16dp"
+        android:text="GỢI Ý KHÁC — CHẠM ĐỂ CHỌN" />
 
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/cgCandidates"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp" />
+        app:chipSpacingHorizontal="8dp"
+        app:chipSpacingVertical="2dp" />
 </LinearLayout>

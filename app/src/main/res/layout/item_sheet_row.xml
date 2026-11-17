@@ -104,5 +104,15 @@
                 android:textColor="@color/tc_text_muted"
                 android:textSize="11sp" />
         </LinearLayout>
+
+        <!-- Ô tick khi đang chọn nhiều -->
+        <CheckBox
+            android:id="@+id/cbSel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:clickable="false"
+            android:focusable="false"
+            android:visibility="gone" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
